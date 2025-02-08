@@ -4,6 +4,7 @@ from chessgpt.data.vocab import ChessVocab, ChessTokenizer
 from torch.nn import functional as F
 from chessgpt.data.dataset import ChessDataset
 from torch.utils.data import DataLoader
+import tqdm
 
 
 class ChessBigram(nn.Module):
@@ -77,7 +78,7 @@ class ChessBigram(nn.Module):
         for epoch in range(epochs):
             self.train()
             total_loss_t = 0
-            for x, y in train_loader:
+            for x, y in tqdm.tqdm(train_loader, desc=f"Epoch {epoch}"):
                 optimizer.zero_grad()
                 loss = self.step(x, y)
                 loss.backward()

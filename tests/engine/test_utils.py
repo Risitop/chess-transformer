@@ -1,4 +1,4 @@
-from chess.engine import utils
+from chessgpt.engine import utils
 
 
 def test_pos_conversions():

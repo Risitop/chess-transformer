@@ -1,5 +1,5 @@
 import random
-from chess.engine.state import GameState
+from chessgpt.engine.state import GameState
 
 
 def test_game():

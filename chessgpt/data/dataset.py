@@ -30,7 +30,13 @@ class ChessDataset(Dataset):
             except ValueError:
                 print(f"Skipping invalid game: {game}")
                 continue
-            for i in range(len(tokens_t) - block_size):
-                contexts.append(tokens_t[i : i + block_size])
-                targets.append(tokens_t[i + 1 : i + block_size + 1])
+            for i in range(block_size - 1):
+                context = torch.zeros(block_size, dtype=torch.long)
+                target = torch.zeros(block_size, dtype=torch.long)
+                context[:i] = tokens_t[:i]
+                target[:i] = tokens_t[1 : i + 1]
+                contexts.append(context)
+                targets.append(target)
+                if i >= len(tokens) - 1:
+                    break
         return ChessDataset(contexts=contexts, targets=targets)
