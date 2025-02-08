@@ -13,6 +13,7 @@ class ColorType(Enum):
 
     WHITE = np.uint8(0)
     BLACK = np.uint8(1)
+    EMPTY = np.uint8(2)
 
 
 class PieceType(Enum):
@@ -47,7 +48,13 @@ class PieceState(Enum):
     @property
     def color(self) -> ColorType:
         """Returns the color of the piece."""
-        return ColorType.BLACK if self.value & _COL_MASK else ColorType.WHITE
+        return (
+            ColorType.EMPTY
+            if self == PieceState.EMPTY
+            else ColorType.BLACK
+            if self.value & _COL_MASK
+            else ColorType.WHITE
+        )
 
     @property
     def type(self) -> PieceType:
@@ -56,8 +63,10 @@ class PieceState(Enum):
 
 
 class Piece(NamedTuple):
+    """Represents a chess piece in a given state."""
+
     state: PieceState
-    pos: np.uint64
+    pos: str
 
     def __repr__(self) -> str:
         if self.empty:
@@ -78,3 +87,41 @@ class Piece(NamedTuple):
     def empty(self) -> bool:
         """Returns True if the piece is empty."""
         return self.type == PieceType.EMPTY
+
+
+class Move(NamedTuple):
+    """Represents a chess move."""
+
+    player: ColorType
+    piece: Piece
+    start: str
+    end: str
+    is_valid: bool
+    repr: str
+    is_capture: bool = False
+    is_castle: bool = False
+    is_double_pawn_push: bool = False
+    is_long_castle: bool = False
+    is_promotion: bool = False
+    is_promotion_to: PieceType | None = None
+
+    def __str__(self) -> str:
+        """Returns the move as a standardized string."""
+        return self.repr
+
+    @classmethod
+    def invalid(cls) -> "Move":
+        """Returns an invalid move."""
+        return cls(
+            player=ColorType.EMPTY,
+            piece=Piece(PieceState.EMPTY, ""),
+            start="",
+            end="",
+            repr="",
+            is_valid=False,
+            is_capture=False,
+            is_castle=False,
+            is_long_castle=False,
+            is_promotion=False,
+            is_promotion_to=None,
+        )
