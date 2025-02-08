@@ -85,8 +85,8 @@ def _enrich_moves(uci_moves: list, san_moves: list) -> list:
 if __name__ == "__main__":
     filename = "2025-01-big.pgn"
     FILE_DIR = DATA_DIR / "raw" / filename
-    OUT_DIR = DATA_DIR / "processed" / (filename[:-4] + ".gptd")
+    OUT_DIR = DATA_DIR / "processed" / (filename[:-4] + "-large.gptd")
     if OUT_DIR.exists():
         raise FileExistsError(f"Output file already exists: {OUT_DIR}")
     f = FILE_DIR.open("r")
-    games = extract_games(FILE_DIR, 20000, 1500, OUT_DIR)
+    games = extract_games(FILE_DIR, 100_000, 1500, OUT_DIR)

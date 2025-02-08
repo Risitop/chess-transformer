@@ -92,16 +92,16 @@ class ChessBigram(nn.Module):
                 with torch.no_grad():
                     loss = self.step(x, y)
                     total_loss_v += loss.item()
-                    if total_loss_v < best_val:
-                        best_val = total_loss_v
-                        best_model = self.state_dict()
-                        patience = early_stopping
-                    else:
-                        patience -= 1
-                        if patience == 0:
-                            print("Early stopping.")
-                            self.load_state_dict(best_model)
-                            return self
+            if total_loss_v < best_val:
+                best_val = total_loss_v
+                best_model = self.state_dict()
+                patience = early_stopping
+            else:
+                patience -= 1
+                if patience == 0:
+                    print("Early stopping.")
+                    self.load_state_dict(best_model)
+                    return self
             print(
                 f"Epoch {epoch} | Train loss: {total_loss_t / len(train_loader):.2f} "
                 f"| Val loss: {total_loss_v / len(val_loader):.2f}"
