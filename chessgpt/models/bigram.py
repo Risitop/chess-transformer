@@ -27,7 +27,12 @@ class ChessBigram(nn.Module):
         B, T, C = logits.shape
         logits = logits.view(B * T, C)
         target = target.view(B * T)
-        return F.cross_entropy(logits, target)
+        pad_mask = target != self._vocab.pad_token_id
+        mask_weight = pad_mask.sum()
+        return (
+            F.cross_entropy(logits[pad_mask], target[pad_mask], reduction="sum")
+            / mask_weight
+        )
 
     def _generate_one(self, x: torch.Tensor) -> torch.Tensor:
         """Generates one token."""
@@ -61,7 +66,7 @@ class ChessBigram(nn.Module):
                 new_move_seq = self._tokenizer.detokenize(x_current)
                 new_moves = new_move_seq.split(" ")
                 n_new_moves = len(new_moves)
-                if n_new_moves > n_moves:
+                if n_new_moves > n_moves + 1:  # We ensure move is fully generated
                     valid = True
                     new_move = new_moves[n_moves]
                     if new_move == self._vocab.inv(self._vocab.eos_token_id):
@@ -92,7 +97,7 @@ class ChessBigram(nn.Module):
         batch_size: int = 16,
         epochs: int = 30,
         lr: float = 1e-2,
-        early_stopping: int = 3,
+        early_stopping: int = 5,
     ) -> "ChessBigram":
         """Train the model on a dataset."""
         train_dataset = ChessDataset.parse_training_data(
@@ -110,31 +115,42 @@ class ChessBigram(nn.Module):
         for epoch in range(epochs):
             self.train()
             total_loss_t = 0
+            batches = 0
             for x, y in tqdm.tqdm(train_loader, desc=f"Epoch {epoch}"):
                 optimizer.zero_grad()
                 loss = self.step(x, y)
                 loss.backward()
                 optimizer.step()
                 total_loss_t += loss.item()
-            self.eval()
-            total_loss_v = 0
-            for x, y in val_loader:
-                with torch.no_grad():
-                    loss = self.step(x, y)
-                    total_loss_v += loss.item()
-            if total_loss_v < best_val:
-                best_val = total_loss_v
-                best_model = self.state_dict()
-                patience = early_stopping
-            else:
-                patience -= 1
-                if patience == 0:
-                    print("Early stopping.")
-                    self.load_state_dict(best_model)  # type: ignore
-                    return self
-            print(
-                f"Epoch {epoch} | Train loss: {total_loss_t / len(train_loader):.2f} "
-                f"| Val loss: {total_loss_v / len(val_loader):.2f}"
-            )
+                batches += 1
+                if batches % 10000 == 0:
+                    val_loss = self._evaluate_val_loss(val_loader)
+                    self.train()
+                    print(
+                        f"Val loss: {val_loss / len(val_loader):.2f}, training loss: {total_loss_t / batches:.2f}"
+                    )
+                    batches = 0
+                    total_loss_t = 0
+
+                    if val_loss < best_val:
+                        best_val = val_loss
+                        best_model = self.state_dict()
+                        patience = early_stopping
+                    else:
+                        patience -= 1
+                        if patience == 0:
+                            print("Early stopping.")
+                            self.load_state_dict(best_model)  # type: ignore
+                            return self
 
         return self
+
+    def _evaluate_val_loss(self, val_loader: DataLoader) -> float:
+        """Evaluates the validation loss."""
+        self.eval()
+        total_loss_v = 0
+        with torch.no_grad():
+            for x, y in val_loader:
+                loss = self.step(x, y)
+                total_loss_v += loss.item()
+        return total_loss_v

@@ -31,8 +31,12 @@ class ChessDataset(Dataset):
                 print(f"Skipping invalid game: {game}")
                 continue
             for i in range(block_size - 1):
-                context = torch.zeros(block_size, dtype=torch.long)
-                target = torch.zeros(block_size, dtype=torch.long)
+                context = torch.zeros(block_size, dtype=torch.long).fill_(
+                    tokenizer._vocab.pad_token_id
+                )
+                target = torch.zeros(block_size, dtype=torch.long).fill_(
+                    tokenizer._vocab.pad_token_id
+                )
                 context[:i] = tokens_t[:i]
                 target[:i] = tokens_t[1 : i + 1]
                 contexts.append(context)
