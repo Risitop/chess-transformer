@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 import numpy as np
 from chess.engine.piece import ColorType, Piece, PieceState, PieceType
+from typing import Iterator
 
 _T_POS = str | np.uint64
 
@@ -27,6 +28,51 @@ class GameState:
     has_castled: bool = False
     current_player: ColorType = ColorType.WHITE
     in_check: ColorType | None = None
+
+    @property
+    def _bitboards(self) -> set[tuple[PieceState, np.uint64]]:
+        """Iterates over all bitboards."""
+        return {
+            (PieceState.PAWN_W, self.w_pawn),
+            (PieceState.ROOK_W, self.w_rook),
+            (PieceState.KNIGHT_W, self.w_knight),
+            (PieceState.BISHOP_W, self.w_bishop),
+            (PieceState.QUEEN_W, self.w_queen),
+            (PieceState.KING_W, self.w_king),
+            (PieceState.PAWN_B, self.b_pawn),
+            (PieceState.ROOK_B, self.b_rook),
+            (PieceState.KNIGHT_B, self.b_knight),
+            (PieceState.BISHOP_B, self.b_bishop),
+            (PieceState.QUEEN_B, self.b_queen),
+            (PieceState.KING_B, self.b_king),
+        }
+
+    def _set_state(self, state: PieceState, bitboard: np.uint64) -> None:
+        """Sets a bitboard for a piece state."""
+        if state == PieceState.PAWN_W:
+            self.w_pawn = bitboard
+        elif state == PieceState.ROOK_W:
+            self.w_rook = bitboard
+        elif state == PieceState.KNIGHT_W:
+            self.w_knight = bitboard
+        elif state == PieceState.BISHOP_W:
+            self.w_bishop = bitboard
+        elif state == PieceState.QUEEN_W:
+            self.w_queen = bitboard
+        elif state == PieceState.KING_W:
+            self.w_king = bitboard
+        elif state == PieceState.PAWN_B:
+            self.b_pawn = bitboard
+        elif state == PieceState.ROOK_B:
+            self.b_rook = bitboard
+        elif state == PieceState.KNIGHT_B:
+            self.b_knight = bitboard
+        elif state == PieceState.BISHOP_B:
+            self.b_bishop = bitboard
+        elif state == PieceState.QUEEN_B:
+            self.b_queen = bitboard
+        elif state == PieceState.KING_B:
+            self.b_king = bitboard
 
     @classmethod
     def empty(cls) -> "GameState":
@@ -69,93 +115,24 @@ class GameState:
         if isinstance(pos, str):
             pos = _str_pos_to_uint64(pos)
         if pos.bit_count() != 1:
-            raise ValueError(f"Invalid position: {pos}")
-        if self.w_pawn & pos:
-            return Piece(PieceState.PAWN_W, pos)
-        if self.w_rook & pos:
-            return Piece(PieceState.ROOK_W, pos)
-        if self.w_knight & pos:
-            return Piece(PieceState.KNIGHT_W, pos)
-        if self.w_bishop & pos:
-            return Piece(PieceState.BISHOP_W, pos)
-        if self.w_queen & pos:
-            return Piece(PieceState.QUEEN_W, pos)
-        if self.w_king & pos:
-            return Piece(PieceState.KING_W, pos)
-        if self.b_pawn & pos:
-            return Piece(PieceState.PAWN_B, pos)
-        if self.b_rook & pos:
-            return Piece(PieceState.ROOK_B, pos)
-        if self.b_knight & pos:
-            return Piece(PieceState.KNIGHT_B, pos)
-        if self.b_bishop & pos:
-            return Piece(PieceState.BISHOP_B, pos)
-        if self.b_queen & pos:
-            return Piece(PieceState.QUEEN_B, pos)
-        if self.b_king & pos:
-            return Piece(PieceState.KING_B, pos)
+            raise IndexError(f"Invalid position: {pos}")
+        for piece, bitboard in self._bitboards:
+            if pos & bitboard:
+                return Piece(piece, pos)
         return Piece(PieceState.EMPTY, pos)
 
     def __setitem__(self, pos: _T_POS, piece: Piece) -> None:
         """Sets the piece at a position."""
         if isinstance(pos, str):
             pos = _str_pos_to_uint64(pos)
-        if piece.color == ColorType.WHITE:
-            if piece.type == PieceType.PAWN:
-                self.w_pawn |= pos
-            elif piece.type == PieceType.ROOK:
-                self.w_rook |= pos
-            elif piece.type == PieceType.KNIGHT:
-                self.w_knight |= pos
-            elif piece.type == PieceType.BISHOP:
-                self.w_bishop |= pos
-            elif piece.type == PieceType.QUEEN:
-                self.w_queen |= pos
-            elif piece.type == PieceType.KING:
-                self.w_king |= pos
-        elif piece.color == ColorType.BLACK:
-            if piece.type == PieceType.PAWN:
-                self.b_pawn |= pos
-            elif piece.type == PieceType.ROOK:
-                self.b_rook |= pos
-            elif piece.type == PieceType.KNIGHT:
-                self.b_knight |= pos
-            elif piece.type == PieceType.BISHOP:
-                self.b_bishop |= pos
-            elif piece.type == PieceType.QUEEN:
-                self.b_queen |= pos
-            elif piece.type == PieceType.KING:
-                self.b_king |= pos
-        elif piece.color is None:
-            current = self[pos]
-            if current.color == ColorType.WHITE:
-                if current.type == PieceType.PAWN:
-                    self.w_pawn &= ~pos
-                elif current.type == PieceType.ROOK:
-                    self.w_rook &= ~pos
-                elif current.type == PieceType.KNIGHT:
-                    self.w_knight &= ~pos
-                elif current.type == PieceType.BISHOP:
-                    self.w_bishop &= ~pos
-                elif current.type == PieceType.QUEEN:
-                    self.w_queen &= ~pos
-                elif current.type == PieceType.KING:
-                    self.w_king &= ~pos
-            elif current.color == ColorType.BLACK:
-                if current.type == PieceType.PAWN:
-                    self.b_pawn &= ~pos
-                elif current.type == PieceType.ROOK:
-                    self.b_rook &= ~pos
-                elif current.type == PieceType.KNIGHT:
-                    self.b_knight &= ~pos
-                elif current.type == PieceType.BISHOP:
-                    self.b_bishop &= ~pos
-                elif current.type == PieceType.QUEEN:
-                    self.b_queen &= ~pos
-                elif current.type == PieceType.KING:
-                    self.b_king &= ~pos
-        else:
-            raise ValueError(f"Invalid piece: {piece}")
+        if pos.bit_count() != 1:
+            raise IndexError(f"Invalid position: {pos}")
+        for state, bitboard in self._bitboards:
+            if piece.type == PieceType.EMPTY and pos & bitboard:
+                self._set_state(state, bitboard & ~pos)
+                return
+            if piece.state == state:
+                self._set_state(state, bitboard | pos)
 
     def copy(self) -> "GameState":
         """Copies the game state."""
@@ -179,11 +156,13 @@ class GameState:
 
     def apply_move(self, start: _T_POS, end: _T_POS) -> "GameState":
         """Applies a move to the game state."""
-        new_state = self.copy()
         if isinstance(start, str):
             start = _str_pos_to_uint64(start)
         if isinstance(end, str):
             end = _str_pos_to_uint64(end)
+        if not self._is_valid_move(start, end):
+            return self
+        new_state = self.copy()
         new_state[end] = new_state[start]
         new_state[start] = Piece(PieceState.EMPTY, start)
         return new_state
@@ -194,6 +173,10 @@ class GameState:
             for col in "abcdefgh":
                 print(self[col + str(row)], end=" ")
             print()
+
+    def _is_valid_move(self, start: np.uint64, end: np.uint64) -> bool:
+        """Checks if a move is valid."""
+        return True
 
 
 def _str_pos_to_uint64(pos: str) -> np.uint64:
