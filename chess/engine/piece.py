@@ -107,6 +107,7 @@ class Move(NamedTuple):
     is_double_pawn_push: bool = False
     is_long_castle: bool = False
     is_promotion_to: PieceType = PieceType.EMPTY
+    checks: ColorType = ColorType.EMPTY
 
     def __str__(self) -> str:
         """Returns the move as a standardized string."""
@@ -118,6 +119,8 @@ class Move(NamedTuple):
         repr += self.end
         if self.is_promotion:
             repr += "=" + str(self.is_promotion_to)
+        if self.checks != ColorType.EMPTY:
+            repr += "+"
         return repr
 
     @property

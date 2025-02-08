@@ -107,6 +107,29 @@ class GameState:
             moves=[],
         )
 
+    def copy(self) -> "GameState":
+        """Returns a copy of the game state."""
+        return GameState(
+            w_pawn=self.w_pawn,
+            w_rook=self.w_rook,
+            w_knight=self.w_knight,
+            w_bishop=self.w_bishop,
+            w_queen=self.w_queen,
+            w_king=self.w_king,
+            b_pawn=self.b_pawn,
+            b_rook=self.b_rook,
+            b_knight=self.b_knight,
+            b_bishop=self.b_bishop,
+            b_queen=self.b_queen,
+            b_king=self.b_king,
+            moves=self.moves.copy(),
+            turn=self.turn,
+            winner=self.winner,
+            w_has_castled=self.w_has_castled,
+            b_has_castled=self.b_has_castled,
+            current_player=self.current_player,
+        )
+
     def __getitem__(self, pos: _T_POS) -> Piece:
         """Returns the piece at a position."""
         pos = utils.any_to_uint64_pos(pos)
@@ -163,9 +186,7 @@ class GameState:
             self[move.end] = Piece(
                 PieceState.get(move.is_promotion_to, move.player), move.end
             )
-        else:  # Base case
-            if move.is_capture and move.captures.type == PieceType.KING:  # type: ignore
-                self.winner = move.player
+        else:
             self[move.end] = self[move.start]
         self[move.start] = Piece(PieceState.EMPTY, move.start)
         self.current_player = self._switch_turn()
@@ -193,17 +214,52 @@ class GameState:
                     moves.update(Rules.get_knight_moves(piece, (row, col), self))
                 if piece.type == PieceType.KING:
                     moves.update(Rules.get_king_moves(piece, (row, col), self))
-        return moves
+
+        valid_moves = self._filter_check_moves(moves)
+        if not valid_moves:
+            self.winner = _get_opp_color(self.current_player)
+        return valid_moves
 
     def _switch_turn(self) -> ColorType:
         """Switches the current player."""
         Rules.clear_cache()
         self.turn += self.current_player == ColorType.BLACK
-        return (
-            ColorType.WHITE
-            if self.current_player == ColorType.BLACK
-            else ColorType.BLACK
-        )
+        return _get_opp_color(self.current_player)
+
+    def _filter_check_moves(self, moves: dict[str, Move]) -> dict[str, Move]:
+        """Filters out moves that put current player's king in check."""
+        current_player = self.current_player
+        new_moves = {}
+        for move in moves.values():
+            new_state = self.copy().apply_move(move)
+            if _king_is_checked(new_state, new_state._get_king(current_player)):
+                continue
+            if _king_is_checked(
+                new_state, new_state._get_king(_get_opp_color(current_player))
+            ):
+                new_move = Move(
+                    piece=move.piece,
+                    end=move.end,
+                    captures=move.captures,
+                    is_castle=move.is_castle,
+                    is_double_pawn_push=move.is_double_pawn_push,
+                    is_long_castle=move.is_long_castle,
+                    is_promotion_to=move.is_promotion_to,
+                    checks=_get_opp_color(current_player),
+                )
+                new_moves[str(new_move)] = new_move
+            else:
+                new_moves[str(move)] = move
+        return new_moves
+
+    def _get_king(self, color: ColorType) -> Piece:
+        """Returns the king for a given color."""
+        for row in range(8):
+            for col in range(8):
+                piece = self[row, col]
+                if piece.color == color and piece.type == PieceType.KING:
+                    return piece
+        raise ValueError(f"King not found for color: {color}")
 
 
 class Rules:
@@ -235,13 +291,14 @@ class Rules:
 
     @classmethod
     def clear_cache(cls):
+        """Clears the move cache."""
         cls._cache = {}
 
     @staticmethod
     def get_pawn_moves(
         piece: Piece, start: tuple[int, int], state: GameState
     ) -> dict[str, Move]:
-        """Returns all valid, non-capture pawn moves from a position."""
+        """Returns all valid pawn moves from a position."""
         if start in Rules._cache:
             return Rules._cache[start]
 
@@ -313,7 +370,7 @@ class Rules:
         state: GameState,
         moveset: Literal["rook", "bishop"],
     ) -> dict[str, Move]:
-        """Returns all valid, non-capture rook moves from a position."""
+        """Returns all valid rook and bishop moves from a position."""
         if start in Rules._cache:
             return Rules._cache[start]
 
@@ -348,7 +405,7 @@ class Rules:
     def get_knight_moves(
         piece: Piece, start: tuple[int, int], state: GameState
     ) -> dict[str, Move]:
-        """Returns all valid, non-capture knight moves from a position."""
+        """Returns all valid knight moves from a position."""
         if start in Rules._cache:
             return Rules._cache[start]
 
@@ -372,7 +429,7 @@ class Rules:
     def get_king_moves(
         piece: Piece, start: tuple[int, int], state: GameState
     ) -> dict[str, Move]:
-        """Returns all valid, non-capture king moves from a position."""
+        """Returns all valid king moves from a position."""
         if start in Rules._cache:
             return Rules._cache[start]
 
@@ -439,6 +496,7 @@ def _check_castling(state: GameState, color: ColorType) -> tuple[bool, bool]:
 
 
 def _castle(state: GameState, move: Move) -> None:
+    """Performs a castling move."""
     if move.player == ColorType.WHITE:
         if move.is_long_castle:
             state["c1"] = state["e1"]
@@ -467,6 +525,78 @@ def _castle(state: GameState, move: Move) -> None:
         state.b_has_castled = True
 
 
+def _king_is_checked(state: GameState, king: Piece) -> bool:
+    """Check all directions around the king for direct checks."""
+    king_pos = utils.str_to_cartesian_pos(king.pos)
+    target_player = king.color
+    # Look for queens, rooks, bishops
+    for direction in Rules._ROOK_MOVES + Rules._BISHOP_MOVES:
+        for step in range(1, 8):
+            dest = (
+                king_pos[0] + direction[0] * step,
+                king_pos[1] + direction[1] * step,
+            )
+            if dest[0] < 0 or dest[0] >= 8 or dest[1] < 0 or dest[1] >= 8:
+                break
+            piece = state[dest]
+            if not piece.empty:
+                if piece.color == target_player:
+                    break
+                if piece.type == PieceType.QUEEN:
+                    return True
+                if piece.type == PieceType.ROOK and abs(sum(direction)) == 1:
+                    return True
+                if piece.type == PieceType.BISHOP and not sum(direction) % 2:
+                    return True
+
+    # Look for knights
+    for direction in Rules._KNIGHT_MOVES:
+        dest = (king_pos[0] + direction[0], king_pos[1] + direction[1])
+        if dest[0] < 0 or dest[0] >= 8 or dest[1] < 0 or dest[1] >= 8:
+            continue
+        piece = state[dest]
+        if (
+            not piece.empty
+            and piece.color != target_player
+            and piece.type == PieceType.KNIGHT
+        ):
+            return True
+
+    # Look for pawns
+    direction = 1 if target_player == ColorType.WHITE else -1
+    for diagonal in (-1, 1):
+        dest = (king_pos[0] + diagonal, king_pos[1] + direction)
+        if dest[0] < 0 or dest[0] >= 8 or dest[1] < 0 or dest[1] >= 8:
+            continue
+        piece = state[dest]
+        if (
+            not piece.empty
+            and piece.color != target_player
+            and piece.type == PieceType.PAWN
+        ):
+            return True
+
+    # Look for kings
+    for direction in Rules._KING_MOVES:
+        dest = (king_pos[0] + direction[0], king_pos[1] + direction[1])
+        if dest[0] < 0 or dest[0] >= 8 or dest[1] < 0 or dest[1] >= 8:
+            continue
+        piece = state[dest]
+        if (
+            not piece.empty
+            and piece.color != target_player
+            and piece.type == PieceType.KING
+        ):
+            return True
+
+    return False
+
+
+def _get_opp_color(color: ColorType) -> ColorType:
+    """Returns the opposite color."""
+    return ColorType.WHITE if color == ColorType.BLACK else ColorType.BLACK
+
+
 if __name__ == "__main__":
     board = GameState.initialize()
     # play a few moves
@@ -481,5 +611,7 @@ if __name__ == "__main__":
     board.print()
     if not moves:
         print("No more moves!")
-    if board.winner != ColorType.EMPTY:
-        print(f"King has fallen! Winner: {board.winner.name}")
+        if board.winner == ColorType.EMPTY:
+            print("Stalemate!")
+        else:
+            print(f"King has fallen! Winner: {board.winner.name}")
