@@ -28,7 +28,7 @@ class PieceType(Enum):
     KING = np.uint8(6)
 
     def __str__(self) -> str:
-        return self.name[0]
+        return ".PRNBQK"[self.value]  # type: ignore
 
 
 class PieceState(Enum):
@@ -107,6 +107,7 @@ class Move(NamedTuple):
     is_valid: bool
     repr: str
     is_capture: bool = False
+    is_capture_type_: PieceType | None = None
     is_castle: bool = False
     is_double_pawn_push: bool = False
     is_long_castle: bool = False
@@ -133,3 +134,10 @@ class Move(NamedTuple):
             is_promotion=False,
             is_promotion_to=None,
         )
+
+    @property
+    def is_capture_type(self) -> PieceType:
+        """Returns the type of the captured piece."""
+        if self.is_capture_type_ is None:
+            raise ValueError("No capture type for this move.")
+        return self.is_capture_type_

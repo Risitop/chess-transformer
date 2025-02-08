@@ -1,8 +1,7 @@
 from dataclasses import dataclass
 import numpy as np
 from chess.engine.piece import ColorType, Piece, PieceState, PieceType, Move
-import math
-import functools
+from chess.engine import utils
 import random
 
 _T_POS = str | np.uint64 | tuple[int, int]
@@ -29,6 +28,7 @@ class GameState:
     # Move history
     moves: list[Move]
     turn: int = 1
+    winner: ColorType = ColorType.EMPTY
 
     # Other state information
     has_castled: bool = False
@@ -127,17 +127,17 @@ class GameState:
 
     def __getitem__(self, pos: _T_POS) -> Piece:
         """Returns the piece at a position."""
-        pos = _any_to_uint64_pos(pos)
+        pos = utils.any_to_uint64_pos(pos)
         if pos.bit_count() != 1:
             raise IndexError(f"Invalid position: {pos}")
         for piece, bitboard in self._bitboards:
             if pos & bitboard:
-                return Piece(piece, _uint64_to_str_pos(pos))
-        return Piece(PieceState.EMPTY, _uint64_to_str_pos(pos))
+                return Piece(piece, utils.uint64_to_str_pos(pos))
+        return Piece(PieceState.EMPTY, utils.uint64_to_str_pos(pos))
 
     def __setitem__(self, pos: _T_POS, piece: Piece) -> None:
         """Sets the piece at a position."""
-        pos = _any_to_uint64_pos(pos)
+        pos = utils.any_to_uint64_pos(pos)
         if pos.bit_count() != 1:
             raise IndexError(f"Invalid position: {pos}")
         for state, bitboard in self._bitboards:
@@ -151,6 +151,8 @@ class GameState:
         if not move.is_valid:
             return self
         self.moves.append(move)
+        if move.is_capture and move.is_capture_type == PieceType.KING:
+            self.winner = move.player
         if not move.is_promotion:
             self[move.end] = self[move.start]
         else:
@@ -194,6 +196,11 @@ class GameState:
                     moves.update(Rules.get_pawn_moves(piece, (row, col), self))
         return moves
 
+    @property
+    def ended(self) -> bool:
+        """Returns True if the game has ended."""
+        return self.winner != ColorType.EMPTY
+
     def _switch_turn(self) -> ColorType:
         """Switches the current player."""
         Rules.clear_cache()
@@ -233,11 +240,11 @@ class Rules:
             if step_size == 2 and (start[1] - direction) % 7:
                 continue
             if state[front_square].empty:
-                dest = _cartesian_to_str_pos(front_square)
+                dest = utils.cartesian_to_str_pos(front_square)
                 moves[dest] = Move(
                     player=piece.color,
                     piece=piece,
-                    start=_cartesian_to_str_pos(start),
+                    start=utils.cartesian_to_str_pos(start),
                     end=dest,
                     is_valid=True,
                     repr=dest,
@@ -250,15 +257,16 @@ class Rules:
             if diag_square[0] < 0 or diag_square[0] >= 8:
                 continue
             if not state[diag_square].empty and state[diag_square].color != piece.color:
-                dest = f"{_cartesian_to_str_pos(diag_square)}+"
+                dest = f"{utils.cartesian_to_str_pos(diag_square)}+"
                 moves[dest] = Move(
                     player=piece.color,
                     piece=piece,
-                    start=_cartesian_to_str_pos(start),
+                    start=utils.cartesian_to_str_pos(start),
                     end=dest[:-1],
                     is_valid=True,
                     repr=dest,
                     is_capture=True,
+                    is_capture_type_=state[diag_square].type,
                 )
 
         # En passant
@@ -273,20 +281,21 @@ class Rules:
             moves[dest] = Move(
                 player=piece.color,
                 piece=piece,
-                start=_cartesian_to_str_pos(start),
+                start=utils.cartesian_to_str_pos(start),
                 end=dest[:-1],
                 is_valid=True,
                 repr=dest,
                 is_capture=True,
+                is_capture_type_=PieceType.PAWN,
             )
 
         # Promotion
         promotions = []
         for dest, move in moves.items():
             if move.end[1] in ("1", "8"):
-                promotions.append(dest)
+                promotions.append((dest, move))
 
-        for dest in promotions:
+        for dest, move in promotions:
             del moves[dest]
             for promotion in (
                 PieceType.QUEEN,
@@ -296,78 +305,36 @@ class Rules:
             ):
                 dest_ = f"{dest}={str(promotion)[0]}"
                 moves[dest_] = Move(
-                    player=piece.color,
-                    piece=piece,
-                    start=_cartesian_to_str_pos(start),
-                    end=dest,
+                    player=move.player,
+                    piece=move.piece,
+                    start=move.start,
+                    end=move.end,
                     is_valid=True,
                     repr=dest_,
                     is_promotion=True,
                     is_promotion_to=promotion,
+                    is_capture=move.is_capture,
+                    is_capture_type_=move.is_capture_type_,
                 )
 
         Rules._cache[start] = moves
         return moves
 
 
-# Position formalism conversion functions
-@functools.cache
-def _cartesian_to_str_pos(pos: tuple[int, int]) -> str:
-    """Converts a cartesian position to a string position."""
-    return chr(pos[0] + ord("a")) + str(pos[1] + 1)
-
-
-@functools.cache
-def _cartesian_to_uint64_pos(pos: tuple[int, int]) -> np.uint64:
-    """Converts a cartesian position to a uint64 bitboard."""
-    return np.uint64(1) << np.uint64(pos[1] * 8 + pos[0])
-
-
-@functools.cache
-def _str_to_cartesian_pos(pos: str) -> tuple[int, int]:
-    """Converts a string position to a cartesian position."""
-    return ord(pos[0]) - ord("a"), int(pos[1]) - 1
-
-
-@functools.cache
-def _str_to_uint64_pos(pos: str) -> np.uint64:
-    """Converts a string position to a uint64 bitboard."""
-    x, y = _str_to_cartesian_pos(pos)
-    return np.uint64(1) << np.uint64(y * 8 + x)
-
-
-@functools.cache
-def _uint64_to_str_pos(pos: np.uint64) -> str:
-    """Converts a uint64 bitboard to a string position."""
-    return _cartesian_to_str_pos(_uint64_to_cartesian_pos(pos))
-
-
-@functools.cache
-def _uint64_to_cartesian_pos(pos: np.uint64) -> tuple[int, int]:
-    """Converts a uint64 bitboard to a cartesian position."""
-    bit_pos = int(math.log2(pos))
-    return bit_pos % 8, bit_pos // 8
-
-
-@functools.cache
-def _any_to_uint64_pos(pos: _T_POS) -> np.uint64:
-    """Converts any position to a uint64 bitboard."""
-    if isinstance(pos, str):
-        return _str_to_uint64_pos(pos)
-    if isinstance(pos, tuple):
-        return _cartesian_to_uint64_pos(pos)
-    return pos
-
-
 if __name__ == "__main__":
     board = GameState.initialize()
     board.print()
     # play a few moves
-    for _ in range(20):
+    for _ in range(100):
         moves = board.get_legal_moves()
         if not moves:
-            print("No more moves!")
             break
         move = random.choice(list(moves.values()))
         board = board.apply_move(move)
-        board.print()
+        if board.ended:
+            break
+    board.print()
+    if not moves:
+        print("No more moves!")
+    if board.winner != ColorType.EMPTY:
+        print(f"King has fallen! Winner: {board.winner.name}")
