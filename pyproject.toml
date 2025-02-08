@@ -6,7 +6,10 @@ authors = [{name = "Risitop"}]
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "tqdm (>=4.67.1,<5.0.0)"
+    "tqdm (>=4.67.1,<5.0.0)",
+    "ruff (>=0.9.5,<0.10.0)",
+    "torch (>=2.6.0,<3.0.0)",
+    "numpy (>=2.2.2,<3.0.0)"
 ]
 
 

@@ -3,10 +3,9 @@ from chess.constants import DATA_DIR, WHITE, BLACK
 from dataclasses import dataclass
 from io import TextIOWrapper
 from pathlib import Path
-from typing import Literal
 
 @dataclass
-class Game:
+class GameRecord:
     """Represents a single game of chess."""
     
     min_elo: int
@@ -34,10 +33,10 @@ def _extract_moves(line: str) -> list[str]:
     moves = line.split(" ")[1:]
     return [move for move in moves if _is_move(move)]
     
-def extract_game(file: TextIOWrapper) -> Game:
+def extract_game(file: TextIOWrapper) -> GameRecord:
     """Extracts the next game from a PGN file."""
     
-    min_elo = float("inf")
+    min_elo = int("inf")
     moves = []
     started = False
     read_lines = 0
@@ -50,7 +49,7 @@ def extract_game(file: TextIOWrapper) -> Game:
             try:
                 elo = int(line.split(" ")[1][1:-2])
             except ValueError:
-                elo = float("inf")
+                elo = int("inf")
             min_elo = min(min_elo, elo)
         elif started and line.startswith("1."):
             moves = _extract_moves(line)
@@ -65,9 +64,9 @@ def extract_game(file: TextIOWrapper) -> Game:
     if min_elo == float("inf") or not moves:
         raise ValueError("Invalid game.")
     
-    return Game(min_elo, moves)
+    return GameRecord(min_elo, moves)
 
-def extract_games(file_path: Path, n_games: int, min_elo: int) -> list[Game]:
+def extract_games(file_path: Path, n_games: int, min_elo: int) -> list[GameRecord]:
     """Extracts n games from a PGN file.
     
     Parameters
@@ -105,7 +104,7 @@ def extract_games(file_path: Path, n_games: int, min_elo: int) -> list[Game]:
     stream.close()
     return games
 
-def write_games(games: list[Game], file_path: Path) -> None:
+def write_games(games: list[GameRecord], file_path: Path) -> None:
     """Writes game moves to a file.
     
     Parameters
