@@ -1,1 +1,11 @@
 data/
+.python-version
+*/__pycache__/
+*/.pytest_cache/
+*/.vscode/
+*/.idea/
+*/.mypy_cache/
+*/.tox/
+*/.venv/
+*/.vscode
+poetry.lock
