@@ -1,6 +1,13 @@
 from dataclasses import dataclass
 import numpy as np
-from chess.engine.piece import ColorType, Piece, PieceState, PieceType, Move
+from chess.engine.piece import (
+    ColorType,
+    Piece,
+    PieceState,
+    PieceType,
+    Move,
+    get_opp_color,
+)
 from chess.engine import utils
 import random
 from typing import Literal
@@ -234,14 +241,27 @@ class GameState:
         valid_moves = self._filter_check_moves(moves)
         if not valid_moves:
             if self.last_move is not None and self.last_move.checks != ColorType.EMPTY:
-                self.winner = _get_opp_color(self.current_player)
+                self.winner = get_opp_color(self.current_player)
+                self.moves.append(Move.to_checkmate(self.moves.pop()))
+
         return valid_moves
+
+    def play_moves(self, moves_seq: str) -> "GameState":
+        """Plays a sequence of moves."""
+        for move_str in moves_seq.split(" "):
+            if move_str.endswith(".") or not len(move_str):
+                continue
+            move = Move.from_str(move_str, self, self.current_player)  # type: ignore
+            if str(move) not in self.get_legal_moves():
+                raise ValueError(f"Invalid move: {move}")
+            self = self.apply_move(move)
+        return self
 
     def _switch_turn(self) -> ColorType:
         """Switches the current player."""
         Rules.clear_cache()
         self.turn += self.current_player == ColorType.BLACK
-        return _get_opp_color(self.current_player)
+        return get_opp_color(self.current_player)
 
     def _filter_check_moves(self, moves: dict[str, Move]) -> dict[str, Move]:
         """Filters out moves that put current player's king in check."""
@@ -252,7 +272,7 @@ class GameState:
             if _king_is_checked(new_state, new_state._get_king(current_player)):
                 continue
             if _king_is_checked(
-                new_state, new_state._get_king(_get_opp_color(current_player))
+                new_state, new_state._get_king(get_opp_color(current_player))
             ):
                 new_move = Move(
                     piece=move.piece,
@@ -262,7 +282,7 @@ class GameState:
                     is_double_pawn_push=move.is_double_pawn_push,
                     is_long_castle=move.is_long_castle,
                     is_promotion_to=move.is_promotion_to,
-                    checks=_get_opp_color(current_player),
+                    checks=get_opp_color(current_player),
                 )
                 new_moves[str(new_move)] = new_move
             else:
@@ -609,25 +629,10 @@ def _king_is_checked(state: GameState, king: Piece) -> bool:
     return False
 
 
-def _get_opp_color(color: ColorType) -> ColorType:
-    """Returns the opposite color."""
-    return ColorType.WHITE if color == ColorType.BLACK else ColorType.BLACK
-
-
 if __name__ == "__main__":
     board = GameState.initialize()
-    while not board.is_ended:
-        moves = board.get_legal_moves()
-        if not moves:
-            break
-        move = random.choice(list(moves.values()))
-        board = board.apply_move(move)
+    to_play = """1. Ph2h4 Pd7d6 2. Pe2e3 Ke8d7 3. Nc1b3 Pf7f6 4. Qd1c1 Bg8d5
+    5. Pe3e4 Pf6f5 6. Pf2f4 Pb7b5 7. Pa2a3 Ph7h5 8. Pd2d4 Kd7e6
+    9. Pc2c4 Bd5b7 10. Pe4e5 Pb5xc4 11. Nb3a5 Bb7a6""".replace("\n", "")
+    board = board.play_moves(to_play)
     board.print()
-    if board.draw:
-        print("Draw!")
-    elif board.winner == ColorType.WHITE:
-        print("White wins!")
-    elif board.winner == ColorType.BLACK:
-        print("Black wins!")
-    else:
-        print("Game ended in a stalemate.")
