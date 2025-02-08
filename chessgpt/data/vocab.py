@@ -34,7 +34,11 @@ class ChessTokenizer:
 
     def detokenize(self, tensor: torch.Tensor) -> str:
         """Detokenizes a tensor of token IDs into a string."""
-        return " ".join([self._vocab.inv(int(token.item())) for token in tensor[1:]])
+        return (
+            "".join([self._vocab.inv(int(token.item())) for token in tensor[1:]])
+            .strip()
+            .replace("  ", " ")
+        )
 
 
 class ChessVocab:

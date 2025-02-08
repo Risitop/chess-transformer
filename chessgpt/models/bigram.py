@@ -5,6 +5,7 @@ from torch.nn import functional as F
 from chessgpt.data.dataset import ChessDataset
 from torch.utils.data import DataLoader
 import tqdm
+from chessgpt.engine import state
 
 
 class ChessBigram(nn.Module):
@@ -42,14 +43,43 @@ class ChessBigram(nn.Module):
         return predicted
 
     def generate(self, start: str, max_length: int = 20) -> str:
-        """Generates a sequence of tokens."""
+        """Generates a chess game sequence."""
+        game = state.GameState.initialize()
+        played_moves = []
+        if len(start):
+            game.play_moves(start)
+            played_moves = start.split(" ")
+        n_moves = len(played_moves)
         self._tokenizer = ChessTokenizer(self._vocab)
         with torch.no_grad():
             xl = self._tokenizer.tokenize(start, add_eos=False, add_sos=True)
             x = torch.tensor(xl).type(torch.long)
-            for _ in range(max_length):
-                next_token = self._generate_one(x)
-                x = torch.cat([x, next_token], dim=-1)
+            x_current = x.clone()
+            while len(played_moves) < max_length:
+                next_token = self._generate_one(x_current)
+                x_current = torch.cat([x_current, next_token], dim=-1)
+                new_move_seq = self._tokenizer.detokenize(x_current)
+                new_moves = new_move_seq.split(" ")
+                n_new_moves = len(new_moves)
+                if n_new_moves > n_moves:
+                    valid = True
+                    new_move = new_moves[n_moves]
+                    if new_move == self._vocab.inv(self._vocab.eos_token_id):
+                        break
+                    try:
+                        game.play_moves(new_move)
+                    except Exception as _:
+                        valid = False
+                    if not valid:  # Start again if corrupted state
+                        x_current = x.clone()
+                    else:
+                        played_moves.append(new_move)
+                        xl = self._tokenizer.tokenize(
+                            " ".join(played_moves), add_eos=False, add_sos=True
+                        )
+                        x = torch.tensor(xl).type(torch.long)
+                        x_current = x.clone()
+                        n_moves = len(played_moves)
                 if next_token == self._vocab.eos_token_id:
                     break
         return self._tokenizer.detokenize(x)
@@ -100,7 +130,7 @@ class ChessBigram(nn.Module):
                 patience -= 1
                 if patience == 0:
                     print("Early stopping.")
-                    self.load_state_dict(best_model)
+                    self.load_state_dict(best_model)  # type: ignore
                     return self
             print(
                 f"Epoch {epoch} | Train loss: {total_loss_t / len(train_loader):.2f} "
