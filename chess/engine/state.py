@@ -1,26 +1,8 @@
 from dataclasses import dataclass
 import numpy as np
-from typing import NamedTuple
 from chess.engine.piece import ColorType, Piece, PieceState, PieceType
 
 _T_POS = str | np.uint64
-
-
-class Move(NamedTuple):
-    """Represents a chess move."""
-
-    start: np.uint64
-    end: np.uint64
-    piece: Piece
-    capture: Piece | None = None
-    promotion: PieceType | None = None
-    check: bool = False
-    checkmate: bool = False
-    en_passant: bool = False
-    castling: bool = False
-
-    def __repr__(self) -> str:
-        return f"{self.piece} {self.start} -> {self.end}"
 
 
 @dataclass
@@ -217,13 +199,6 @@ class GameState:
 def _str_pos_to_uint64(pos: str) -> np.uint64:
     """Converts a string position to a uint64 bitboard."""
     return np.uint64(1) << ((np.uint64(pos[1]) - 1) * 8 + (ord(pos[0]) - ord("a")))  # type: ignore
-
-
-def _uint64_pos_to_str(pos: np.uint64) -> str:
-    """Converts a uint64 bitboard to a string position."""
-    row = 8 - (pos.bit_length() // 8)  # type: ignore
-    col = chr((pos.bit_length() % 8) + ord("a"))  # type: ignore
-    return col + str(row)
 
 
 if __name__ == "__main__":
