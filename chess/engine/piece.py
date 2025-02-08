@@ -196,12 +196,19 @@ class Move(NamedTuple):
                 raise ValueError(f"No captured piece found at position: {dest_pos}")
         else:
             dest_pos = move_str[3:5]
+        promotion_type = PieceType.EMPTY
+        if "=" in move_str:
+            promotion_type = move_str[move_str.index("=") + 1]
+            if promotion_type not in "RNBQ":
+                raise ValueError(f"Invalid promotion type: {promotion_type}")
+            promotion_type = PieceType("RNBQ".index(promotion_type) + 2)
         checks, checkmate = _parse_checks(move_str, src_piece.color)
         return Move(
             piece=src_piece,
             end=dest_pos,
             captures=board[dest_pos] if capture else None,
             checks=checks,
+            is_promotion_to=promotion_type,
             checkmate=checkmate,
         )
 

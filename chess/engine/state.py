@@ -138,6 +138,13 @@ class GameState:
             current_player=self.current_player,
         )
 
+    def swap(self, pos1: str, pos2: str, copy: bool) -> "GameState":
+        """Swaps two pieces on the board."""
+        target = self.copy() if copy else self
+        piece1, piece2 = target[pos1], target[pos2]
+        target[pos1], target[pos2] = piece2, piece1
+        return target
+
     def __getitem__(self, pos: _T_POS) -> Piece:
         """Returns the piece at a position."""
         pos = utils.any_to_uint64_pos(pos)
@@ -252,7 +259,9 @@ class GameState:
             if move_str.endswith(".") or not len(move_str):
                 continue
             move = Move.from_str(move_str, self, self.current_player)  # type: ignore
-            if str(move) not in self.get_legal_moves():
+            legal_moves = self.get_legal_moves()
+            move_repr = str(move).replace("#", "+")
+            if move_repr not in legal_moves:
                 raise ValueError(f"Invalid move: {move}")
             self = self.apply_move(move)
         return self
@@ -483,7 +492,7 @@ class Rules:
             moves.append(Move(piece=piece, end=dest_str))
 
         # Castling
-        short, long = _check_castling(state, piece.color)
+        short, long = _check_castling(state)
         if short:
             moves.append(Move(piece=piece, end="", is_castle=True))
         if long:
@@ -494,40 +503,50 @@ class Rules:
         return result
 
 
-def _check_castling(state: GameState, color: ColorType) -> tuple[bool, bool]:
+def _check_castling(state: GameState) -> tuple[bool, bool]:
     """Returns True if castling is possible for a given color."""
     short, long = False, False
-    if state.current_player == ColorType.WHITE and not state.w_has_castled:
-        # Short castle
-        king = state["e1"].type == PieceType.KING
-        rook = state["h1"].type == PieceType.ROOK
-        empty1 = state["f1"].empty
-        empty2 = state["g1"].empty
-        short = king and rook and empty1 and empty2
+    if (
+        state.current_player == ColorType.WHITE
+        and state.w_has_castled
+        or (state.current_player == ColorType.BLACK and state.b_has_castled)
+    ):
+        return False, False
 
-        # Long castle
-        king = state["e1"].type == PieceType.KING
-        rook = state["a1"].type == PieceType.ROOK
-        empty1 = state["b1"].empty
-        empty2 = state["c1"].empty
-        empty3 = state["d1"].empty
-        long = king and rook and empty1 and empty2 and empty3
+    _short_keys_w = ("e1", "h1", "f1", "g1")
+    _long_keys_w = ("e1", "a1", "b1", "c1", "d1")
+    _short_keys_b = ("e8", "h8", "f8", "g8")
+    _long_keys_b = ("e8", "a8", "b8", "c8", "d8")
 
-    if state.current_player == ColorType.BLACK and not state.b_has_castled:
-        # Short castle
-        king = state["e8"].type == PieceType.KING
-        rook = state["h8"].type == PieceType.ROOK
-        empty1 = state["f8"].empty
-        empty2 = state["g8"].empty
-        short = king and rook and empty1 and empty2
+    # Short castle
+    k, r, e1, e2 = (
+        _short_keys_w if state.current_player == ColorType.WHITE else _short_keys_b
+    )
+    king = state[k].type == PieceType.KING
+    rook = state[r].type == PieceType.ROOK
+    empty1 = state[e1].empty
+    empty2 = state[e2].empty
+    short = king and rook and empty1 and empty2
+    if short:
+        short &= not _king_is_checked(state, state[k])
+        short &= not _king_is_checked(state.swap(k, e1, True), state[e1])
+        short &= not _king_is_checked(state.swap(k, e2, True), state[e2])
 
-        # Long castle
-        king = state["e8"].type == PieceType.KING
-        rook = state["a8"].type == PieceType.ROOK
-        empty1 = state["b8"].empty
-        empty2 = state["c8"].empty
-        empty3 = state["d8"].empty
-        long = king and rook and empty1 and empty2 and empty3
+    # Long castle
+    k, r, e1, e2, e3 = (
+        _long_keys_w if state.current_player == ColorType.WHITE else _long_keys_b
+    )
+    king = state[k].type == PieceType.KING
+    rook = state[r].type == PieceType.ROOK
+    empty1 = state[e1].empty
+    empty2 = state[e2].empty
+    empty3 = state[e3].empty
+    long = king and rook and empty1 and empty2 and empty3
+    if long:
+        long &= not _king_is_checked(state, state[k])
+        long &= not _king_is_checked(state.swap(k, e1, True), state[e1])
+        long &= not _king_is_checked(state.swap(k, e2, True), state[e2])
+        long &= not _king_is_checked(state.swap(k, e3, True), state[e3])
 
     return short, long
 
@@ -631,8 +650,23 @@ def _king_is_checked(state: GameState, king: Piece) -> bool:
 
 if __name__ == "__main__":
     board = GameState.initialize()
-    to_play = """1. Ph2h4 Pd7d6 2. Pe2e3 Ke8d7 3. Nc1b3 Pf7f6 4. Qd1c1 Bg8d5
-    5. Pe3e4 Pf6f5 6. Pf2f4 Pb7b5 7. Pa2a3 Ph7h5 8. Pd2d4 Kd7e6
-    9. Pc2c4 Bd5b7 10. Pe4e5 Pb5xc4 11. Nb3a5 Bb7a6""".replace("\n", "")
+    to_play = """1. Pc2c4 Pf7f6 2. Pg2g4 Pe7e6 3. Ph2h4 Nc8b6 4. Nc1d3 Pc7c6 
+5. Pf2f3 Pa7a6 6. Nd3f2 Nb6d5 7. Pb2b4 Bb8g3 8. Nf1h2 Ke8f7 
+9. Pc4xd5 Pg7g6 10. Pd2d4 Ra8b8 11. Ke1f1 Pf6f5 12. Pd5xe6+ Kf7e7 
+13. Pa2a4 Qd8c8 14. Nf2e4 Rb8a8 15. Bb1c2 Qc8d8 16. Pb4b5 Bg3b8 
+17. Ne4f6 Pf5f4 18. Qd1c1 Pd7d5 19. Qc1d1 Pg6g5 20. Ra1c1 Pa6a5 
+21. Bg1f2 Ra8a7 22. Bc2xh7 Bb8e5 23. Ph4h5 Ke7xe6 24. Bh7e4 Ra7a8 
+25. Pb5b6 Pd5xe4 26. Bf2h4 Ra8c8 27. Bh4e1 Rc8c7 28. Qd1d2 Pc6c5 
+29. Qd2d3 Qd8c8 30. Ph5h6 Nf8g6 31. Pf3xe4 Bg8h7 32. Pe2e3 Be5d6 
+33. Pe3xf4 Ng6h4 34. Be1c3 Bd6e5 35. Qd3f3 Bh7f5 36. Pf4xg5 Rh8d8 
+37. Qf3d3 Rd8e8 38. Pb6xc7 Nh4g2 39. Rc1e1 Re8f8 40. Pg5g6 Bf5xg4 
+41. Qd3d2 Ng2f4 42. Qd2f2 Rf8h8 43. Nf6h5 Qc8d8 44. Nh5f6 Nf4d5 
+45. Qf2c2 Bg4f3 46. Kf1g1 Pc5xd4 47. Bc3xa5 Nd5f4 48. Re1d1 Qd8b8 
+49. Ph6h7 Pd4d3 50. Rd1e1 Qb8a8 51. Kg1f1 Nf4e2 52. Nh2g4 Be5xc7 
+53. Ba5b4 Bc7d8 54. Bb4d6 Qa8c8 55. Bd6c5 Bf3xh1 56. Bc5b6 Bd8c7 
+57. Nf6e8 Bc7g3 58. Ng4h6 Bg3c7 59. Re1c1 Bc7g3 60. Bb6a5 Qc8a8 
+61. Pe4e5 Qa8c8 62. Ba5b4 Qc8b8 63. Qc2c6+ Bh1xc6 64. Bb4d6 Rh8g8 
+65. Ph7g8=B+ Ke6d7 66. Pg6g7 Bc6e4 67. Rc1c7+ Kd7xe8 68. Bd6a3 Be4g6 
+69. Bg8c4 Bg3h4 70. Pa4a5 Ne2f4 71. Pg7g8=Q#""".replace("\n", "")
     board = board.play_moves(to_play)
     board.print()
