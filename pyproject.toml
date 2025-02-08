@@ -11,7 +11,8 @@ dependencies = [
     "torch (>=2.6.0,<3.0.0)",
     "numpy (>=2.2.2,<3.0.0)",
     "pytest (>=8.3.4,<9.0.0)",
-    "python-chess (>=1.999,<2.0)"
+    "python-chess (>=1.999,<2.0)",
+    "jupyter (>=1.1.1,<2.0.0)"
 ]
 
 

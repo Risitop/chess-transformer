@@ -37,7 +37,7 @@ def extract_games(
         san_moves = [move for i, move in enumerate(san_moves) if i % 3]
         try:
             enriched_moves = _enrich_moves(uci_moves, san_moves)
-        except ValueError as e:
+        except ValueError as _:
             continue
         result = game.headers["Result"]
         if result not in ["1-0", "0-1", "1/2-1/2"]:
