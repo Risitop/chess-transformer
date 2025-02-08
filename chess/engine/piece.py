@@ -27,6 +27,9 @@ class PieceType(Enum):
     QUEEN = np.uint8(5)
     KING = np.uint8(6)
 
+    def __str__(self) -> str:
+        return self.name[0]
+
 
 class PieceState(Enum):
     """Represents a chess piece as an 8-bit integer."""
@@ -61,6 +64,11 @@ class PieceState(Enum):
         """Returns the type of the piece."""
         return PieceType(int(self.value & _TYP_MASK))
 
+    @classmethod
+    def get(cls, piece: PieceType, color: ColorType) -> "PieceState":
+        """Returns the piece state for a given type and color."""
+        return cls(piece.value + color.value * 8)
+
 
 class Piece(NamedTuple):
     """Represents a chess piece in a given state."""
@@ -68,10 +76,10 @@ class Piece(NamedTuple):
     state: PieceState
     pos: str
 
-    def __repr__(self) -> str:
+    def __str__(self) -> str:
         if self.empty:
             return ".."
-        return ".PNBRQK"[self.type.value] + "wb"[self.color.value]  # type: ignore
+        return str(self.type) + "wb"[self.color.value]  # type: ignore
 
     @property
     def color(self) -> ColorType:

@@ -112,14 +112,14 @@ class GameState:
         return cls(
             w_pawn=np.uint64(0x000000000000FF00),
             w_rook=np.uint64(0x0000000000000081),
-            w_knight=np.uint64(0x0000000000000042),
-            w_bishop=np.uint64(0x0000000000000024),
+            w_knight=np.uint64(0x0000000000000024),
+            w_bishop=np.uint64(0x0000000000000042),
             w_queen=np.uint64(0x0000000000000008),
             w_king=np.uint64(0x0000000000000010),
             b_pawn=np.uint64(0x00FF000000000000),
             b_rook=np.uint64(0x8100000000000000),
-            b_knight=np.uint64(0x4200000000000000),
-            b_bishop=np.uint64(0x2400000000000000),
+            b_knight=np.uint64(0x2400000000000000),
+            b_bishop=np.uint64(0x4200000000000000),
             b_queen=np.uint64(0x0800000000000000),
             b_king=np.uint64(0x1000000000000000),
             moves=[],
@@ -143,7 +143,6 @@ class GameState:
         for state, bitboard in self._bitboards:
             if pos & bitboard:
                 self._set_state(state, bitboard & ~pos)
-                return
             if piece.state == state:
                 self._set_state(state, bitboard | pos)
 
@@ -152,7 +151,15 @@ class GameState:
         if not move.is_valid:
             return self
         self.moves.append(move)
-        self[move.end] = self[move.start]
+        if not move.is_promotion:
+            self[move.end] = self[move.start]
+        else:
+            if move.is_promotion_to is None:
+                raise RuntimeError("Promotion move without promotion type.")
+            self[move.end] = Piece(
+                PieceState.get(move.is_promotion_to, move.player),
+                move.end,
+            )
         self[move.start] = Piece(PieceState.EMPTY, move.start)
         self.current_player = self._switch_turn()
         return self
@@ -186,25 +193,6 @@ class GameState:
                 if piece.type == PieceType.PAWN:
                     moves.update(Rules.get_pawn_moves(piece, (row, col), self))
         return moves
-
-    def _get_move(self, uint_start: np.uint64, uint_end: np.uint64) -> Move:
-        """Returns a move from a start and end position."""
-        piece_src = self[uint_start]
-        piece_dest = self[uint_end]
-        start = _uint64_to_cartesian_pos(uint_start)
-        end = _uint64_to_str_pos(uint_end)
-        if piece_src.type == PieceType.EMPTY:
-            return Move.invalid()
-        if piece_src.color != self.current_player:
-            return Move.invalid()
-        if piece_dest.color == self.current_player:
-            return Move.invalid()
-        if piece_src.type == PieceType.PAWN:
-            pawn_moves = Rules.get_pawn_moves(piece_src, start, self)
-            if end not in pawn_moves:
-                return Move.invalid()
-            return pawn_moves[end]
-        return Move.invalid()
 
     def _switch_turn(self) -> ColorType:
         """Switches the current player."""
@@ -240,7 +228,7 @@ class Rules:
         # Move forward
         for step_size in (1, 2):
             front_square = (start[0], start[1] + step_size * direction)
-            if step_size == 1 and front_square[1] < 0 or front_square[1] >= 8:
+            if step_size == 1 and (front_square[1] < 0 or front_square[1] >= 8):
                 return moves
             if step_size == 2 and (start[1] - direction) % 7:
                 continue
@@ -306,7 +294,7 @@ class Rules:
                 PieceType.BISHOP,
                 PieceType.KNIGHT,
             ):
-                dest_ = f"{dest}={promotion.name[0]}"
+                dest_ = f"{dest}={str(promotion)[0]}"
                 moves[dest_] = Move(
                     player=piece.color,
                     piece=piece,
@@ -375,7 +363,7 @@ if __name__ == "__main__":
     board = GameState.initialize()
     board.print()
     # play a few moves
-    for _ in range(100):
+    for _ in range(20):
         moves = board.get_legal_moves()
         if not moves:
             print("No more moves!")
