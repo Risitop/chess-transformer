@@ -3,6 +3,7 @@ import numpy as np
 from chess.engine.piece import ColorType, Piece, PieceState, PieceType, Move
 from chess.engine import utils
 import random
+from typing import Literal
 
 _T_POS = str | np.uint64 | tuple[int, int]
 
@@ -34,7 +35,6 @@ class GameState:
     w_has_castled: bool = False
     b_has_castled: bool = False
     current_player: ColorType = ColorType.WHITE
-    in_check: ColorType | None = None
 
     @property
     def _bitboards(self) -> set[tuple[PieceState, np.uint64]]:
@@ -89,25 +89,6 @@ class GameState:
             self.b_king = bitboard
 
     @classmethod
-    def empty(cls) -> "GameState":
-        """Creates an empty game state."""
-        return cls(
-            w_pawn=np.uint64(0),
-            w_rook=np.uint64(0),
-            w_knight=np.uint64(0),
-            w_bishop=np.uint64(0),
-            w_queen=np.uint64(0),
-            w_king=np.uint64(0),
-            b_pawn=np.uint64(0),
-            b_rook=np.uint64(0),
-            b_knight=np.uint64(0),
-            b_bishop=np.uint64(0),
-            b_queen=np.uint64(0),
-            b_king=np.uint64(0),
-            moves=[],
-        )
-
-    @classmethod
     def initialize(cls) -> "GameState":
         """Initializes the game state."""
         return cls(
@@ -142,17 +123,18 @@ class GameState:
         if pos.bit_count() != 1:
             raise IndexError(f"Invalid position: {pos}")
         for state, bitboard in self._bitboards:
-            if pos & bitboard:
-                self._set_state(state, bitboard & ~pos)
             if piece.state == state:
                 self._set_state(state, bitboard | pos)
+            else:
+                self._set_state(state, bitboard & ~pos)
 
     def print(self) -> None:
         """Prints the board state."""
         print(f"Player: {self.current_player.name} / Last: {self.last_move}")
-        # Move history
         print("> ", end="")
         for i, move in enumerate(self.moves):
+            if i > 0 and i % 8 == 0:
+                print()
             if i % 2 == 0:
                 print(f"{i // 2 + 1}.", end=" ")
             print(move, end=" ")
@@ -165,54 +147,26 @@ class GameState:
         print("    A  B  C  D  E  F  G  H")
         print()
 
+    @property
+    def is_ended(self) -> bool:
+        """Returns True if the game has ended."""
+        return self.winner != ColorType.EMPTY
+
     def apply_move(self, move: Move) -> "GameState":
-        """Applies a move to the game state."""
-        if not move.is_valid:
-            return self
+        """Applies a move to the game state (assumed valid!)."""
         self.moves.append(move)
 
-        # Special moves
-        if move.is_capture and move.is_capture_type == PieceType.KING:
-            self.winner = move.player
-
-        elif move.is_castle:
-            if move.player == ColorType.WHITE:
-                if move.is_long_castle:
-                    self["c1"] = self["e1"]
-                    self["d1"] = self["a1"]
-                    self["a1"] = Piece(PieceState.EMPTY, "e1")
-                    self["b1"] = Piece(PieceState.EMPTY, "a1")
-                    self["e1"] = Piece(PieceState.EMPTY, "e1")
-                else:
-                    self["g1"] = self["e1"]
-                    self["f1"] = self["h1"]
-                    self["h1"] = Piece(PieceState.EMPTY, "e1")
-                    self["e1"] = Piece(PieceState.EMPTY, "e1")
-                self.w_has_castled = True
-            else:
-                if move.is_long_castle:
-                    self["c8"] = self["e8"]
-                    self["d8"] = self["a8"]
-                    self["a8"] = Piece(PieceState.EMPTY, "e8")
-                    self["b8"] = Piece(PieceState.EMPTY, "a8")
-                    self["e8"] = Piece(PieceState.EMPTY, "e8")
-                else:
-                    self["g8"] = self["e8"]
-                    self["f8"] = self["h8"]
-                    self["h8"] = Piece(PieceState.EMPTY, "e8")
-                    self["e8"] = Piece(PieceState.EMPTY, "e8")
-                self.b_has_castled = True
-
+        # Special cases
+        if move.is_castle:
+            _castle(self, move)
         elif move.is_promotion:
-            if move.is_promotion_to is None:
-                raise RuntimeError("Promotion move without promotion type.")
             self[move.end] = Piece(
-                PieceState.get(move.is_promotion_to, move.player),
-                move.end,
+                PieceState.get(move.is_promotion_to, move.player), move.end
             )
-        else:
+        else:  # Base case
+            if move.is_capture and move.captures.type == PieceType.KING:  # type: ignore
+                self.winner = move.player
             self[move.end] = self[move.start]
-
         self[move.start] = Piece(PieceState.EMPTY, move.start)
         self.current_player = self._switch_turn()
         return self
@@ -227,23 +181,19 @@ class GameState:
                     continue
                 if piece.type == PieceType.PAWN:
                     moves.update(Rules.get_pawn_moves(piece, (row, col), self))
-                if piece.type == PieceType.ROOK:
-                    moves.update(Rules.get_rook_moves(piece, (row, col), self))
-                if piece.type == PieceType.BISHOP:
-                    moves.update(Rules.get_bishop_moves(piece, (row, col), self))
-                if piece.type == PieceType.QUEEN:
-                    moves.update(Rules.get_rook_moves(piece, (row, col), self))
-                    moves.update(Rules.get_bishop_moves(piece, (row, col), self))
+                if piece.type == PieceType.ROOK or piece.type == PieceType.QUEEN:
+                    moves.update(
+                        Rules.get_rook_bishop_moves(piece, (row, col), self, "rook")
+                    )
+                if piece.type == PieceType.BISHOP or piece.type == PieceType.QUEEN:
+                    moves.update(
+                        Rules.get_rook_bishop_moves(piece, (row, col), self, "bishop")
+                    )
                 if piece.type == PieceType.KNIGHT:
                     moves.update(Rules.get_knight_moves(piece, (row, col), self))
                 if piece.type == PieceType.KING:
                     moves.update(Rules.get_king_moves(piece, (row, col), self))
         return moves
-
-    @property
-    def ended(self) -> bool:
-        """Returns True if the game has ended."""
-        return self.winner != ColorType.EMPTY
 
     def _switch_turn(self) -> ColorType:
         """Switches the current player."""
@@ -260,6 +210,28 @@ class Rules:
     """Dynamic rules for chess moves."""
 
     _cache = {}
+    _ROOK_MOVES = ((1, 0), (-1, 0), (0, 1), (0, -1))
+    _BISHOP_MOVES = ((1, 1), (-1, 1), (1, -1), (-1, -1))
+    _KNIGHT_MOVES = (
+        (2, 1),
+        (-2, 1),
+        (2, -1),
+        (-2, -1),
+        (1, 2),
+        (-1, 2),
+        (1, -2),
+        (-1, -2),
+    )
+    _KING_MOVES = (
+        (1, 0),
+        (-1, 0),
+        (0, 1),
+        (0, -1),
+        (1, 1),
+        (-1, 1),
+        (1, -1),
+        (-1, -1),
+    )
 
     @classmethod
     def clear_cache(cls):
@@ -273,26 +245,20 @@ class Rules:
         if start in Rules._cache:
             return Rules._cache[start]
 
-        moves = {}
+        moves = []
         direction = 1 if piece.color == ColorType.WHITE else -1
 
         # Move forward
         for step_size in (1, 2):
             front_square = (start[0], start[1] + step_size * direction)
             if step_size == 1 and (front_square[1] < 0 or front_square[1] >= 8):
-                return moves
+                return {}
             if step_size == 2 and (start[1] - direction) % 7:
                 continue
             if state[front_square].empty:
                 dest = utils.cartesian_to_str_pos(front_square)
-                moves[dest] = Move(
-                    player=piece.color,
-                    piece=piece,
-                    start=utils.cartesian_to_str_pos(start),
-                    end=dest,
-                    is_valid=True,
-                    is_double_pawn_push=step_size == 2,
-                )
+                is_double = step_size == 2
+                moves.append(Move(piece=piece, end=dest, is_double_pawn_push=is_double))
 
         # Diagonal capture
         for diagonal in (-1, 1):
@@ -300,16 +266,8 @@ class Rules:
             if diag_square[0] < 0 or diag_square[0] >= 8:
                 continue
             if not state[diag_square].empty and state[diag_square].color != piece.color:
-                dest = f"{utils.cartesian_to_str_pos(diag_square)}+"
-                moves[dest] = Move(
-                    player=piece.color,
-                    piece=piece,
-                    start=utils.cartesian_to_str_pos(start),
-                    end=dest[:-1],
-                    is_valid=True,
-                    is_capture=True,
-                    is_capture_type_=state[diag_square].type,
-                )
+                dest = utils.cartesian_to_str_pos(diag_square)
+                moves.append(Move(piece=piece, end=dest, captures=state[diag_square]))
 
         # En passant
         last_move = state.last_move
@@ -319,58 +277,56 @@ class Rules:
             and last_move.end[1] == start[1]
             and abs(ord(last_move.end[0]) - start[0]) == 1
         ):
-            dest = f"{last_move.end[0] + str(start[1] + direction)}+"
-            moves[dest] = Move(
-                player=piece.color,
-                piece=piece,
-                start=utils.cartesian_to_str_pos(start),
-                end=dest[:-1],
-                is_valid=True,
-                is_capture=True,
-                is_capture_type_=PieceType.PAWN,
-            )
+            dest = last_move.end[0] + str(start[1] + direction)
+            moves.append(Move(piece=piece, end=dest, captures=state[last_move.end]))
 
         # Promotion
-        promotions = []
-        for dest, move in moves.items():
-            if move.end[1] in ("1", "8"):
-                promotions.append((dest, move))
+        promotions_idx = []
+        for idx in range(len(moves)):
+            if moves[idx].end[1] in ("1", "8"):
+                promotions_idx.append(idx)
 
-        for dest, move in promotions:
-            del moves[dest]
+        for idx in promotions_idx:
+            move = moves[idx]
             for promotion in (
                 PieceType.QUEEN,
                 PieceType.ROOK,
                 PieceType.BISHOP,
                 PieceType.KNIGHT,
             ):
-                dest_ = f"{dest}={str(promotion)[0]}"
-                moves[dest_] = Move(
-                    player=move.player,
-                    piece=move.piece,
-                    start=move.start,
-                    end=move.end,
-                    is_valid=True,
-                    is_promotion=True,
-                    is_promotion_to=promotion,
-                    is_capture=move.is_capture,
-                    is_capture_type_=move.is_capture_type_,
+                moves.append(
+                    Move(piece=move.piece, end=move.end, is_promotion_to=promotion)
                 )
 
-        Rules._cache[start] = moves
-        return moves
+        result = {
+            str(move): move
+            for idx, move in enumerate(moves)
+            if idx not in promotions_idx
+        }
+        Rules._cache[start] = result
+        return result
 
     @staticmethod
-    def get_rook_moves(
-        piece: Piece, start: tuple[int, int], state: GameState
+    def get_rook_bishop_moves(
+        piece: Piece,
+        start: tuple[int, int],
+        state: GameState,
+        moveset: Literal["rook", "bishop"],
     ) -> dict[str, Move]:
         """Returns all valid, non-capture rook moves from a position."""
         if start in Rules._cache:
             return Rules._cache[start]
 
-        strart_str = utils.cartesian_to_str_pos(start)
-        moves = {}
-        for direction in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+        match moveset:
+            case "rook":
+                directions = Rules._ROOK_MOVES
+            case "bishop":
+                directions = Rules._BISHOP_MOVES
+            case _:
+                raise ValueError(f"Invalid moveset: {moveset}")
+
+        moves = []
+        for direction in directions:
             for step in range(1, 8):
                 dest = (start[0] + direction[0] * step, start[1] + direction[1] * step)
                 if dest[0] < 0 or dest[0] >= 8 or dest[1] < 0 or dest[1] >= 8:
@@ -378,66 +334,15 @@ class Rules:
                 dest_str = utils.cartesian_to_str_pos(dest)
                 if not state[dest].empty:
                     if state[dest].color != piece.color:
-                        dest_ = f"R{dest_str}+"
-                        moves[dest_] = Move(
-                            player=piece.color,
-                            piece=piece,
-                            start=strart_str,
-                            end=dest_str,
-                            is_valid=True,
-                            is_capture=True,
-                            is_capture_type_=state[dest].type,
+                        moves.append(
+                            Move(piece=piece, end=dest_str, captures=state[dest])
                         )
                     break
-                moves[dest_str] = Move(
-                    player=piece.color,
-                    piece=piece,
-                    start=strart_str,
-                    end=dest_str,
-                    is_valid=True,
-                )
-        Rules._cache[start] = moves
-        return moves
+                moves.append(Move(piece=piece, end=dest_str))
 
-    @staticmethod
-    def get_bishop_moves(
-        piece: Piece, start: tuple[int, int], state: GameState
-    ) -> dict[str, Move]:
-        """Returns all valid, non-capture bishop moves from a position."""
-        if start in Rules._cache:
-            return Rules._cache[start]
-
-        strart_str = utils.cartesian_to_str_pos(start)
-        moves = {}
-        for direction in ((1, 1), (-1, 1), (1, -1), (-1, -1)):
-            for step in range(1, 8):
-                dest = (start[0] + direction[0] * step, start[1] + direction[1] * step)
-                if dest[0] < 0 or dest[0] >= 8 or dest[1] < 0 or dest[1] >= 8:
-                    break
-                dest_str = utils.cartesian_to_str_pos(dest)
-                if not state[dest].empty:
-                    if state[dest].color != piece.color:
-                        dest_ = f"{dest_str}+"
-                        moves[dest_] = Move(
-                            player=piece.color,
-                            piece=piece,
-                            start=strart_str,
-                            end=dest_str,
-                            is_valid=True,
-                            is_capture=True,
-                            is_capture_type_=state[dest].type,
-                        )
-                    break
-                moves[dest_str] = Move(
-                    player=piece.color,
-                    piece=piece,
-                    start=strart_str,
-                    end=dest_str,
-                    is_valid=True,
-                )
-
-        Rules._cache[start] = moves
-        return moves
+        result = {str(move): move for move in moves}
+        Rules._cache[start] = result
+        return result
 
     @staticmethod
     def get_knight_moves(
@@ -447,45 +352,21 @@ class Rules:
         if start in Rules._cache:
             return Rules._cache[start]
 
-        strart_str = utils.cartesian_to_str_pos(start)
-        moves = {}
-        for direction in (
-            (2, 1),
-            (-2, 1),
-            (2, -1),
-            (-2, -1),
-            (1, 2),
-            (-1, 2),
-            (1, -2),
-            (-1, -2),
-        ):
+        moves = []
+        for direction in Rules._KNIGHT_MOVES:
             dest = (start[0] + direction[0], start[1] + direction[1])
             if dest[0] < 0 or dest[0] >= 8 or dest[1] < 0 or dest[1] >= 8:
                 continue
             dest_str = utils.cartesian_to_str_pos(dest)
             if not state[dest].empty:
                 if state[dest].color != piece.color:
-                    dest_ = f"{dest_str}+"
-                    moves[dest_] = Move(
-                        player=piece.color,
-                        piece=piece,
-                        start=strart_str,
-                        end=dest_str,
-                        is_valid=True,
-                        is_capture=True,
-                        is_capture_type_=state[dest].type,
-                    )
+                    moves.append(Move(piece=piece, end=dest_str, captures=state[dest]))
                 continue
-            moves[dest_str] = Move(
-                player=piece.color,
-                piece=piece,
-                start=strart_str,
-                end=dest_str,
-                is_valid=True,
-            )
+            moves.append(Move(piece=piece, end=dest_str))
 
-        Rules._cache[start] = moves
-        return moves
+        result = {str(move): move for move in moves}
+        Rules._cache[start] = result
+        return result
 
     @staticmethod
     def get_king_moves(
@@ -495,113 +376,95 @@ class Rules:
         if start in Rules._cache:
             return Rules._cache[start]
 
-        start_str = utils.cartesian_to_str_pos(start)
-        moves = {}
-        for direction in (
-            (1, 0),
-            (-1, 0),
-            (0, 1),
-            (0, -1),
-            (1, 1),
-            (-1, 1),
-            (1, -1),
-            (-1, -1),
-        ):
+        moves = []
+        for direction in Rules._KING_MOVES:
             dest = (start[0] + direction[0], start[1] + direction[1])
             if dest[0] < 0 or dest[0] >= 8 or dest[1] < 0 or dest[1] >= 8:
                 continue
             dest_str = utils.cartesian_to_str_pos(dest)
             if not state[dest].empty:
                 if state[dest].color != piece.color:
-                    dest_ = f"{dest_str}+"
-                    moves[dest_] = Move(
-                        player=piece.color,
-                        piece=piece,
-                        start=start_str,
-                        end=dest_str,
-                        is_valid=True,
-                        is_capture=True,
-                        is_capture_type_=state[dest].type,
-                    )
+                    moves.append(Move(piece=piece, end=dest_str, captures=state[dest]))
                 continue
-            moves[dest_str] = Move(
-                player=piece.color,
-                piece=piece,
-                start=start_str,
-                end=dest_str,
-                is_valid=True,
-            )
+            moves.append(Move(piece=piece, end=dest_str))
 
-        if state.current_player == ColorType.WHITE and not state.w_has_castled:
-            # Short castle
-            king = state["e1"].type == PieceType.KING
-            rook = state["h1"].type == PieceType.ROOK
-            empty1 = state["f1"].empty
-            empty2 = state["g1"].empty
-            if king and rook and empty1 and empty2:
-                moves["O-O"] = Move(
-                    player=piece.color,
-                    piece=piece,
-                    start=piece.pos,
-                    end="",
-                    is_valid=True,
-                    is_castle=True,
-                    is_long_castle=False,
-                )
+        # Castling
+        short, long = _check_castling(state, piece.color)
+        if short:
+            moves.append(Move(piece=piece, end="", is_castle=True))
+        if long:
+            moves.append(Move(piece=piece, end="", is_castle=True, is_long_castle=True))
 
-            # Long castle
-            king = state["e1"].type == PieceType.KING
-            rook = state["a1"].type == PieceType.ROOK
-            empty1 = state["b1"].empty
-            empty2 = state["c1"].empty
-            empty3 = state["d1"].empty
-            if king and rook and empty1 and empty2 and empty3:
-                moves["O-O-O"] = Move(
-                    player=piece.color,
-                    piece=piece,
-                    start=piece.pos,
-                    end="",
-                    is_valid=True,
-                    is_castle=True,
-                    is_long_castle=True,
-                )
+        result = {str(move): move for move in moves}
+        Rules._cache[start] = result
+        return result
 
-        if state.current_player == ColorType.BLACK and not state.b_has_castled:
-            # Short castle
-            king = state["e8"].type == PieceType.KING
-            rook = state["h8"].type == PieceType.ROOK
-            empty1 = state["f8"].empty
-            empty2 = state["g8"].empty
-            if king and rook and empty1 and empty2:
-                moves["O-O"] = Move(
-                    player=piece.color,
-                    piece=piece,
-                    start=piece.pos,
-                    end="",
-                    is_valid=True,
-                    is_castle=True,
-                    is_long_castle=False,
-                )
 
-            # Long castle
-            king = state["e8"].type == PieceType.KING
-            rook = state["a8"].type == PieceType.ROOK
-            empty1 = state["b8"].empty
-            empty2 = state["c8"].empty
-            empty3 = state["d8"].empty
-            if king and rook and empty1 and empty2 and empty3:
-                moves["O-O-O"] = Move(
-                    player=piece.color,
-                    piece=piece,
-                    start=piece.pos,
-                    end="",
-                    is_valid=True,
-                    is_castle=True,
-                    is_long_castle=True,
-                )
+def _check_castling(state: GameState, color: ColorType) -> tuple[bool, bool]:
+    """Returns True if castling is possible for a given color."""
+    short, long = False, False
+    if state.current_player == ColorType.WHITE and not state.w_has_castled:
+        # Short castle
+        king = state["e1"].type == PieceType.KING
+        rook = state["h1"].type == PieceType.ROOK
+        empty1 = state["f1"].empty
+        empty2 = state["g1"].empty
+        short = king and rook and empty1 and empty2
 
-        Rules._cache[start] = moves
-        return moves
+        # Long castle
+        king = state["e1"].type == PieceType.KING
+        rook = state["a1"].type == PieceType.ROOK
+        empty1 = state["b1"].empty
+        empty2 = state["c1"].empty
+        empty3 = state["d1"].empty
+        long = king and rook and empty1 and empty2 and empty3
+
+    if state.current_player == ColorType.BLACK and not state.b_has_castled:
+        # Short castle
+        king = state["e8"].type == PieceType.KING
+        rook = state["h8"].type == PieceType.ROOK
+        empty1 = state["f8"].empty
+        empty2 = state["g8"].empty
+        short = king and rook and empty1 and empty2
+
+        # Long castle
+        king = state["e8"].type == PieceType.KING
+        rook = state["a8"].type == PieceType.ROOK
+        empty1 = state["b8"].empty
+        empty2 = state["c8"].empty
+        empty3 = state["d8"].empty
+        long = king and rook and empty1 and empty2 and empty3
+
+    return short, long
+
+
+def _castle(state: GameState, move: Move) -> None:
+    if move.player == ColorType.WHITE:
+        if move.is_long_castle:
+            state["c1"] = state["e1"]
+            state["d1"] = state["a1"]
+            state["a1"] = Piece(PieceState.EMPTY, "e1")
+            state["b1"] = Piece(PieceState.EMPTY, "a1")
+            state["e1"] = Piece(PieceState.EMPTY, "e1")
+        else:
+            state["g1"] = state["e1"]
+            state["f1"] = state["h1"]
+            state["h1"] = Piece(PieceState.EMPTY, "e1")
+            state["e1"] = Piece(PieceState.EMPTY, "e1")
+        state.w_has_castled = True
+    else:
+        if move.is_long_castle:
+            state["c8"] = state["e8"]
+            state["d8"] = state["a8"]
+            state["a8"] = Piece(PieceState.EMPTY, "e8")
+            state["b8"] = Piece(PieceState.EMPTY, "a8")
+            state["e8"] = Piece(PieceState.EMPTY, "e8")
+        else:
+            state["g8"] = state["e8"]
+            state["f8"] = state["h8"]
+            state["h8"] = Piece(PieceState.EMPTY, "e8")
+            state["e8"] = Piece(PieceState.EMPTY, "e8")
+        state.b_has_castled = True
 
 
 if __name__ == "__main__":
@@ -613,7 +476,7 @@ if __name__ == "__main__":
             break
         move = random.choice(list(moves.values()))
         board = board.apply_move(move)
-        if board.ended:
+        if board.is_ended:
             break
     board.print()
     if not moves:

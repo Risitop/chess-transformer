@@ -100,18 +100,13 @@ class Piece(NamedTuple):
 class Move(NamedTuple):
     """Represents a chess move."""
 
-    player: ColorType
     piece: Piece
-    start: str
     end: str
-    is_valid: bool
-    is_capture: bool = False
-    is_capture_type_: PieceType | None = None
+    captures: Piece | None = None
     is_castle: bool = False
     is_double_pawn_push: bool = False
     is_long_castle: bool = False
-    is_promotion: bool = False
-    is_promotion_to: PieceType | None = None
+    is_promotion_to: PieceType = PieceType.EMPTY
 
     def __str__(self) -> str:
         """Returns the move as a standardized string."""
@@ -126,8 +121,21 @@ class Move(NamedTuple):
         return repr
 
     @property
-    def is_capture_type(self) -> PieceType:
+    def player(self) -> ColorType:
+        """Returns the player who made the move."""
+        return self.piece.color
+
+    @property
+    def start(self) -> str:
+        """Returns the starting position of the move."""
+        return self.piece.pos
+
+    @property
+    def is_promotion(self) -> bool:
+        """Returns the type of the promoted piece."""
+        return self.is_promotion_to != PieceType.EMPTY
+
+    @property
+    def is_capture(self) -> bool:
         """Returns the type of the captured piece."""
-        if self.is_capture_type_ is None:
-            raise ValueError("No capture type for this move.")
-        return self.is_capture_type_
+        return self.captures is not None
