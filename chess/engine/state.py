@@ -3,6 +3,7 @@ import numpy as np
 from chess.engine.piece import ColorType, Piece, PieceState, PieceType, Move
 import math
 import functools
+import random
 
 _T_POS = str | np.uint64 | tuple[int, int]
 
@@ -24,7 +25,10 @@ class GameState:
     b_bishop: np.uint64
     b_queen: np.uint64
     b_king: np.uint64
+
+    # Move history
     moves: list[Move]
+    turn: int = 1
 
     # Other state information
     has_castled: bool = False
@@ -143,22 +147,26 @@ class GameState:
             if piece.state == state:
                 self._set_state(state, bitboard | pos)
 
-    def apply_move(self, start: _T_POS, end: _T_POS) -> "GameState":
+    def apply_move(self, move: Move) -> "GameState":
         """Applies a move to the game state."""
-        start = _any_to_uint64_pos(start)
-        end = _any_to_uint64_pos(end)
-        move = self._get_move(start, end)
         if not move.is_valid:
             return self
         self.moves.append(move)
-        self[end] = self[start]
-        self[start] = Piece(PieceState.EMPTY, _uint64_to_str_pos(start))
+        self[move.end] = self[move.start]
+        self[move.start] = Piece(PieceState.EMPTY, move.start)
         self.current_player = self._switch_turn()
         return self
 
     def print(self) -> None:
         """Prints the board state."""
         print(f"Player: {self.current_player.name} / Last: {self.last_move}")
+        # Move history
+        print("> ", end="")
+        for i, move in enumerate(self.moves):
+            if i % 2 == 0:
+                print(f"{i // 2 + 1}.", end=" ")
+            print(move, end=" ")
+        print()
         for row in range(8, 0, -1):
             print(row, end=" - ")
             for col in "abcdefgh":
@@ -166,6 +174,18 @@ class GameState:
             print()
         print("    A  B  C  D  E  F  G  H")
         print()
+
+    def get_legal_moves(self) -> dict[str, Move]:
+        """Returns all legal moves for the current player."""
+        moves = {}
+        for row in range(8):
+            for col in range(8):
+                piece = self[row, col]
+                if piece.color != self.current_player:
+                    continue
+                if piece.type == PieceType.PAWN:
+                    moves.update(Rules.get_pawn_moves(piece, (row, col), self))
+        return moves
 
     def _get_move(self, uint_start: np.uint64, uint_end: np.uint64) -> Move:
         """Returns a move from a start and end position."""
@@ -189,6 +209,7 @@ class GameState:
     def _switch_turn(self) -> ColorType:
         """Switches the current player."""
         Rules.clear_cache()
+        self.turn += self.current_player == ColorType.BLACK
         return (
             ColorType.WHITE
             if self.current_player == ColorType.BLACK
@@ -272,26 +293,30 @@ class Rules:
             )
 
         # Promotion
+        promotions = []
         for dest, move in moves.items():
             if move.end[1] in ("1", "8"):
-                del moves[dest]
-                for promotion in (
-                    PieceType.QUEEN,
-                    PieceType.ROOK,
-                    PieceType.BISHOP,
-                    PieceType.KNIGHT,
-                ):
-                    dest_ = f"{dest}={promotion.name[0]}"
-                    moves[dest_] = Move(
-                        player=piece.color,
-                        piece=piece,
-                        start=_cartesian_to_str_pos(start),
-                        end=dest,
-                        is_valid=True,
-                        repr=dest_,
-                        is_promotion=True,
-                        is_promotion_to=promotion,
-                    )
+                promotions.append(dest)
+
+        for dest in promotions:
+            del moves[dest]
+            for promotion in (
+                PieceType.QUEEN,
+                PieceType.ROOK,
+                PieceType.BISHOP,
+                PieceType.KNIGHT,
+            ):
+                dest_ = f"{dest}={promotion.name[0]}"
+                moves[dest_] = Move(
+                    player=piece.color,
+                    piece=piece,
+                    start=_cartesian_to_str_pos(start),
+                    end=dest,
+                    is_valid=True,
+                    repr=dest_,
+                    is_promotion=True,
+                    is_promotion_to=promotion,
+                )
 
         Rules._cache[start] = moves
         return moves
@@ -350,6 +375,11 @@ if __name__ == "__main__":
     board = GameState.initialize()
     board.print()
     # play a few moves
-    board = board.apply_move("e2", "e4")
-    board = board.apply_move("e7", "e5")
-    board.print()
+    for _ in range(100):
+        moves = board.get_legal_moves()
+        if not moves:
+            print("No more moves!")
+            break
+        move = random.choice(list(moves.values()))
+        board = board.apply_move(move)
+        board.print()
