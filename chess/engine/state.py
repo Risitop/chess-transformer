@@ -6,6 +6,7 @@ import random
 from typing import Literal
 
 _T_POS = str | np.uint64 | tuple[int, int]
+_MAX_TURNS = 200
 
 
 @dataclass
@@ -173,7 +174,22 @@ class GameState:
     @property
     def is_ended(self) -> bool:
         """Returns True if the game has ended."""
-        return self.winner != ColorType.EMPTY
+        return self.winner != ColorType.EMPTY or self.draw
+
+    @property
+    def draw(self) -> bool:
+        """Returns True if the game is a stalemate."""
+        if self.turn >= _MAX_TURNS:
+            return True
+        # Insufficient material heuristic
+        n_bishops = self.b_bishop.bit_count() + self.w_bishop.bit_count()
+        n_knights = self.b_knight.bit_count() + self.w_knight.bit_count()
+        n_rooks = self.b_rook.bit_count() + self.w_rook.bit_count()
+        n_pawns = self.b_pawn.bit_count() + self.w_pawn.bit_count()
+        n_queens = self.b_queen.bit_count() + self.w_queen.bit_count()
+        if n_rooks + n_queens + n_pawns > 0:
+            return False
+        return n_bishops + n_knights <= 1
 
     def apply_move(self, move: Move) -> "GameState":
         """Applies a move to the game state (assumed valid!)."""
@@ -217,7 +233,8 @@ class GameState:
 
         valid_moves = self._filter_check_moves(moves)
         if not valid_moves:
-            self.winner = _get_opp_color(self.current_player)
+            if self.last_move is not None and self.last_move.checks != ColorType.EMPTY:
+                self.winner = _get_opp_color(self.current_player)
         return valid_moves
 
     def _switch_turn(self) -> ColorType:
@@ -599,19 +616,18 @@ def _get_opp_color(color: ColorType) -> ColorType:
 
 if __name__ == "__main__":
     board = GameState.initialize()
-    # play a few moves
-    for _ in range(999):
+    while not board.is_ended:
         moves = board.get_legal_moves()
         if not moves:
             break
         move = random.choice(list(moves.values()))
         board = board.apply_move(move)
-        if board.is_ended:
-            break
     board.print()
-    if not moves:
-        print("No more moves!")
-        if board.winner == ColorType.EMPTY:
-            print("Stalemate!")
-        else:
-            print(f"King has fallen! Winner: {board.winner.name}")
+    if board.draw:
+        print("Draw!")
+    elif board.winner == ColorType.WHITE:
+        print("White wins!")
+    elif board.winner == ColorType.BLACK:
+        print("Black wins!")
+    else:
+        print("Game ended in a stalemate.")
