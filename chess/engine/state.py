@@ -3,7 +3,7 @@ import numpy as np
 from enum import Enum
 from typing import NamedTuple
 
-T_POS = tuple[int, int] | str
+T_POS = str | np.uint64
 
 
 class ColorType(Enum):
@@ -27,7 +27,7 @@ class PieceType(Enum):
 class Piece(NamedTuple):
     type: PieceType | None
     color: ColorType | None
-    pos: tuple[int, int]
+    pos: np.uint64
 
     def __repr__(self) -> str:
         if self.empty:
@@ -42,14 +42,14 @@ class Piece(NamedTuple):
     @property
     def coords(self) -> str:
         """Returns the piece's coordinates."""
-        return _tuple_pos_to_str(self.pos)
+        return _uint64_pos_to_str(self.pos)
 
 
 class Move(NamedTuple):
     """Represents a chess move."""
 
-    start: tuple[int, int]
-    end: tuple[int, int]
+    start: np.uint64
+    end: np.uint64
     piece: Piece
     capture: Piece | None = None
     promotion: PieceType | None = None
@@ -124,95 +124,93 @@ class GameState:
     def __getitem__(self, pos: T_POS) -> Piece:
         """Returns the piece at a position."""
         if isinstance(pos, str):
-            pos = _str_pos_to_tuple(pos)
-        if not (0 <= pos[0] < 8 and 0 <= pos[1] < 8):
-            raise IndexError(f"Position out of bounds: {pos}")
-        mask = np.uint64(1) << (pos[0] * 8 + pos[1])
-        if self.w_pawn & mask:
+            pos = _str_pos_to_uint64(pos)
+        if pos.bit_count() != 1:
+            raise ValueError(f"Invalid position: {pos}")
+        if self.w_pawn & pos:
             return Piece(PieceType.PAWN, ColorType.WHITE, pos)
-        if self.w_rook & mask:
+        if self.w_rook & pos:
             return Piece(PieceType.ROOK, ColorType.WHITE, pos)
-        if self.w_knight & mask:
+        if self.w_knight & pos:
             return Piece(PieceType.KNIGHT, ColorType.WHITE, pos)
-        if self.w_bishop & mask:
+        if self.w_bishop & pos:
             return Piece(PieceType.BISHOP, ColorType.WHITE, pos)
-        if self.w_queen & mask:
+        if self.w_queen & pos:
             return Piece(PieceType.QUEEN, ColorType.WHITE, pos)
-        if self.w_king & mask:
+        if self.w_king & pos:
             return Piece(PieceType.KING, ColorType.WHITE, pos)
-        if self.b_pawn & mask:
+        if self.b_pawn & pos:
             return Piece(PieceType.PAWN, ColorType.BLACK, pos)
-        if self.b_rook & mask:
+        if self.b_rook & pos:
             return Piece(PieceType.ROOK, ColorType.BLACK, pos)
-        if self.b_knight & mask:
+        if self.b_knight & pos:
             return Piece(PieceType.KNIGHT, ColorType.BLACK, pos)
-        if self.b_bishop & mask:
+        if self.b_bishop & pos:
             return Piece(PieceType.BISHOP, ColorType.BLACK, pos)
-        if self.b_queen & mask:
+        if self.b_queen & pos:
             return Piece(PieceType.QUEEN, ColorType.BLACK, pos)
-        if self.b_king & mask:
+        if self.b_king & pos:
             return Piece(PieceType.KING, ColorType.BLACK, pos)
         return Piece(None, None, pos)
 
     def __setitem__(self, pos: T_POS, piece: Piece) -> None:
         """Sets the piece at a position."""
         if isinstance(pos, str):
-            pos = _str_pos_to_tuple(pos)
-        mask = np.uint64(1) << (pos[0] * 8 + pos[1])
+            pos = _str_pos_to_uint64(pos)
         if piece.color == ColorType.WHITE:
             if piece.type == PieceType.PAWN:
-                self.w_pawn |= mask
+                self.w_pawn |= pos  # type: ignore
             elif piece.type == PieceType.ROOK:
-                self.w_rook |= mask
+                self.w_rook |= pos  # type: ignore
             elif piece.type == PieceType.KNIGHT:
-                self.w_knight |= mask
+                self.w_knight |= pos  # type: ignore
             elif piece.type == PieceType.BISHOP:
-                self.w_bishop |= mask
+                self.w_bishop |= pos  # type: ignore
             elif piece.type == PieceType.QUEEN:
-                self.w_queen |= mask
+                self.w_queen |= pos  # type: ignore
             elif piece.type == PieceType.KING:
-                self.w_king |= mask
+                self.w_king |= pos  # type: ignore
         elif piece.color == ColorType.BLACK:
             if piece.type == PieceType.PAWN:
-                self.b_pawn |= mask
+                self.b_pawn |= pos  # type: ignore
             elif piece.type == PieceType.ROOK:
-                self.b_rook |= mask
+                self.b_rook |= pos  # type: ignore
             elif piece.type == PieceType.KNIGHT:
-                self.b_knight |= mask
+                self.b_knight |= pos  # type: ignore
             elif piece.type == PieceType.BISHOP:
-                self.b_bishop |= mask
+                self.b_bishop |= pos  # type: ignore
             elif piece.type == PieceType.QUEEN:
-                self.b_queen |= mask
+                self.b_queen |= pos  # type: ignore
             elif piece.type == PieceType.KING:
-                self.b_king |= mask
+                self.b_king |= pos  # type: ignore
         elif piece.color is None:  # Empty square
             current = self[pos]
             if current.color == ColorType.WHITE:
                 if current.type == PieceType.PAWN:
-                    self.w_pawn &= ~mask
+                    self.w_pawn &= ~pos  # type: ignore
                 elif current.type == PieceType.ROOK:
-                    self.w_rook &= ~mask
+                    self.w_rook &= ~pos  # type: ignore
                 elif current.type == PieceType.KNIGHT:
-                    self.w_knight &= ~mask
+                    self.w_knight &= ~pos  # type: ignore
                 elif current.type == PieceType.BISHOP:
-                    self.w_bishop &= ~mask
+                    self.w_bishop &= ~pos  # type: ignore
                 elif current.type == PieceType.QUEEN:
-                    self.w_queen &= ~mask
+                    self.w_queen &= ~pos  # type: ignore
                 elif current.type == PieceType.KING:
-                    self.w_king &= ~mask
+                    self.w_king &= ~pos  # type: ignore
             elif current.color == ColorType.BLACK:
                 if current.type == PieceType.PAWN:
-                    self.b_pawn &= ~mask
+                    self.b_pawn &= ~pos  # type: ignore
                 elif current.type == PieceType.ROOK:
-                    self.b_rook &= ~mask
+                    self.b_rook &= ~pos  # type: ignore
                 elif current.type == PieceType.KNIGHT:
-                    self.b_knight &= ~mask
+                    self.b_knight &= ~pos  # type: ignore
                 elif current.type == PieceType.BISHOP:
-                    self.b_bishop &= ~mask
+                    self.b_bishop &= ~pos  # type: ignore
                 elif current.type == PieceType.QUEEN:
-                    self.b_queen &= ~mask
+                    self.b_queen &= ~pos  # type: ignore
                 elif current.type == PieceType.KING:
-                    self.b_king &= ~mask
+                    self.b_king &= ~pos  # type: ignore
         else:
             raise ValueError(f"Invalid piece: {piece}")
 
@@ -239,9 +237,11 @@ class GameState:
     def apply_move(self, start: T_POS, end: T_POS) -> "GameState":
         """Applies a move to the game state."""
         new_state = self.copy()
-        new_state[end] = new_state[start]
         if isinstance(start, str):
-            start = _str_pos_to_tuple(start)
+            start = _str_pos_to_uint64(start)
+        if isinstance(end, str):
+            end = _str_pos_to_uint64(end)
+        new_state[end] = new_state[start]
         new_state[start] = Piece(None, None, start)
         return new_state
 
@@ -253,21 +253,21 @@ class GameState:
             print()
 
 
-def _str_pos_to_tuple(pos: str) -> tuple[int, int]:
-    """Converts a string position to a tuple: 'a1' -> (0, 0) etc."""
-    return int(pos[1]) - 1, ord(pos[0]) - ord("a")
+def _str_pos_to_uint64(pos: str) -> np.uint64:
+    """Converts a string position to a uint64 bitboard."""
+    return np.uint64(1) << ((np.uint64(pos[1]) - 1) * 8 + (ord(pos[0]) - ord("a")))  # type: ignore
 
 
-def _tuple_pos_to_str(pos: tuple[int, int]) -> str:
-    """Converts a tuple position to a string: (0, 0) -> 'a1' etc."""
-    return chr(pos[1] + ord("a")) + str(pos[0] + 1)
+def _uint64_pos_to_str(pos: np.uint64) -> str:
+    """Converts a uint64 bitboard to a string position."""
+    row = 8 - (pos.bit_length() // 8)  # type: ignore
+    col = chr((pos.bit_length() % 8) + ord("a"))  # type: ignore
+    return col + str(row)
 
 
 if __name__ == "__main__":
     board = GameState.initialize()
-    # Play a few classic moves
+    # play a few moves
     board = board.apply_move("e2", "e4")
     board = board.apply_move("e7", "e5")
-    board = board.apply_move("g1", "f3")
-    board = board.apply_move("b8", "c6")
     board.print()
