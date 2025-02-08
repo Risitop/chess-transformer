@@ -11,4 +11,4 @@ data/
 */.vscode
 poetry.lock
 .vscode
-!chess/data/
+!chessgpt/data/

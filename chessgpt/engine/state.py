@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 import numpy as np
-from chess.engine.piece import (
+from chessgpt.engine.piece import (
     ColorType,
     Piece,
     PieceState,
@@ -8,8 +8,7 @@ from chess.engine.piece import (
     Move,
     get_opp_color,
 )
-from chess.engine import utils
-import random
+from chessgpt.engine import utils
 from typing import Literal
 
 _T_POS = str | np.uint64 | tuple[int, int]
@@ -646,27 +645,3 @@ def _king_is_checked(state: GameState, king: Piece) -> bool:
             return True
 
     return False
-
-
-if __name__ == "__main__":
-    board = GameState.initialize()
-    to_play = """1. Pc2c4 Pf7f6 2. Pg2g4 Pe7e6 3. Ph2h4 Nc8b6 4. Nc1d3 Pc7c6 
-5. Pf2f3 Pa7a6 6. Nd3f2 Nb6d5 7. Pb2b4 Bb8g3 8. Nf1h2 Ke8f7 
-9. Pc4xd5 Pg7g6 10. Pd2d4 Ra8b8 11. Ke1f1 Pf6f5 12. Pd5xe6+ Kf7e7 
-13. Pa2a4 Qd8c8 14. Nf2e4 Rb8a8 15. Bb1c2 Qc8d8 16. Pb4b5 Bg3b8 
-17. Ne4f6 Pf5f4 18. Qd1c1 Pd7d5 19. Qc1d1 Pg6g5 20. Ra1c1 Pa6a5 
-21. Bg1f2 Ra8a7 22. Bc2xh7 Bb8e5 23. Ph4h5 Ke7xe6 24. Bh7e4 Ra7a8 
-25. Pb5b6 Pd5xe4 26. Bf2h4 Ra8c8 27. Bh4e1 Rc8c7 28. Qd1d2 Pc6c5 
-29. Qd2d3 Qd8c8 30. Ph5h6 Nf8g6 31. Pf3xe4 Bg8h7 32. Pe2e3 Be5d6 
-33. Pe3xf4 Ng6h4 34. Be1c3 Bd6e5 35. Qd3f3 Bh7f5 36. Pf4xg5 Rh8d8 
-37. Qf3d3 Rd8e8 38. Pb6xc7 Nh4g2 39. Rc1e1 Re8f8 40. Pg5g6 Bf5xg4 
-41. Qd3d2 Ng2f4 42. Qd2f2 Rf8h8 43. Nf6h5 Qc8d8 44. Nh5f6 Nf4d5 
-45. Qf2c2 Bg4f3 46. Kf1g1 Pc5xd4 47. Bc3xa5 Nd5f4 48. Re1d1 Qd8b8 
-49. Ph6h7 Pd4d3 50. Rd1e1 Qb8a8 51. Kg1f1 Nf4e2 52. Nh2g4 Be5xc7 
-53. Ba5b4 Bc7d8 54. Bb4d6 Qa8c8 55. Bd6c5 Bf3xh1 56. Bc5b6 Bd8c7 
-57. Nf6e8 Bc7g3 58. Ng4h6 Bg3c7 59. Re1c1 Bc7g3 60. Bb6a5 Qc8a8 
-61. Pe4e5 Qa8c8 62. Ba5b4 Qc8b8 63. Qc2c6+ Bh1xc6 64. Bb4d6 Rh8g8 
-65. Ph7g8=B+ Ke6d7 66. Pg6g7 Bc6e4 67. Rc1c7+ Kd7xe8 68. Bd6a3 Be4g6 
-69. Bg8c4 Bg3h4 70. Pa4a5 Ne2f4 71. Pg7g8=Q#""".replace("\n", "")
-    board = board.play_moves(to_play)
-    board.print()
