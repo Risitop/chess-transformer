@@ -31,7 +31,8 @@ class GameState:
     winner: ColorType = ColorType.EMPTY
 
     # Other state information
-    has_castled: bool = False
+    w_has_castled: bool = False
+    b_has_castled: bool = False
     current_player: ColorType = ColorType.WHITE
     in_check: ColorType | None = None
 
@@ -169,17 +170,49 @@ class GameState:
         if not move.is_valid:
             return self
         self.moves.append(move)
+
+        # Special moves
         if move.is_capture and move.is_capture_type == PieceType.KING:
             self.winner = move.player
-        if not move.is_promotion:
-            self[move.end] = self[move.start]
-        else:
+
+        elif move.is_castle:
+            if move.player == ColorType.WHITE:
+                if move.is_long_castle:
+                    self["c1"] = self["e1"]
+                    self["d1"] = self["a1"]
+                    self["a1"] = Piece(PieceState.EMPTY, "e1")
+                    self["b1"] = Piece(PieceState.EMPTY, "a1")
+                    self["e1"] = Piece(PieceState.EMPTY, "e1")
+                else:
+                    self["g1"] = self["e1"]
+                    self["f1"] = self["h1"]
+                    self["h1"] = Piece(PieceState.EMPTY, "e1")
+                    self["e1"] = Piece(PieceState.EMPTY, "e1")
+                self.w_has_castled = True
+            else:
+                if move.is_long_castle:
+                    self["c8"] = self["e8"]
+                    self["d8"] = self["a8"]
+                    self["a8"] = Piece(PieceState.EMPTY, "e8")
+                    self["b8"] = Piece(PieceState.EMPTY, "a8")
+                    self["e8"] = Piece(PieceState.EMPTY, "e8")
+                else:
+                    self["g8"] = self["e8"]
+                    self["f8"] = self["h8"]
+                    self["h8"] = Piece(PieceState.EMPTY, "e8")
+                    self["e8"] = Piece(PieceState.EMPTY, "e8")
+                self.b_has_castled = True
+
+        elif move.is_promotion:
             if move.is_promotion_to is None:
                 raise RuntimeError("Promotion move without promotion type.")
             self[move.end] = Piece(
                 PieceState.get(move.is_promotion_to, move.player),
                 move.end,
             )
+        else:
+            self[move.end] = self[move.start]
+
         self[move.start] = Piece(PieceState.EMPTY, move.start)
         self.current_player = self._switch_turn()
         return self
@@ -363,7 +396,6 @@ class Rules:
                     end=dest_str,
                     is_valid=True,
                 )
-
         Rules._cache[start] = moves
         return moves
 
@@ -463,7 +495,7 @@ class Rules:
         if start in Rules._cache:
             return Rules._cache[start]
 
-        strart_str = utils.cartesian_to_str_pos(start)
+        start_str = utils.cartesian_to_str_pos(start)
         moves = {}
         for direction in (
             (1, 0),
@@ -485,7 +517,7 @@ class Rules:
                     moves[dest_] = Move(
                         player=piece.color,
                         piece=piece,
-                        start=strart_str,
+                        start=start_str,
                         end=dest_str,
                         is_valid=True,
                         is_capture=True,
@@ -495,10 +527,78 @@ class Rules:
             moves[dest_str] = Move(
                 player=piece.color,
                 piece=piece,
-                start=strart_str,
+                start=start_str,
                 end=dest_str,
                 is_valid=True,
             )
+
+        if state.current_player == ColorType.WHITE and not state.w_has_castled:
+            # Short castle
+            king = state["e1"].type == PieceType.KING
+            rook = state["h1"].type == PieceType.ROOK
+            empty1 = state["f1"].empty
+            empty2 = state["g1"].empty
+            if king and rook and empty1 and empty2:
+                moves["O-O"] = Move(
+                    player=piece.color,
+                    piece=piece,
+                    start=piece.pos,
+                    end="",
+                    is_valid=True,
+                    is_castle=True,
+                    is_long_castle=False,
+                )
+
+            # Long castle
+            king = state["e1"].type == PieceType.KING
+            rook = state["a1"].type == PieceType.ROOK
+            empty1 = state["b1"].empty
+            empty2 = state["c1"].empty
+            empty3 = state["d1"].empty
+            if king and rook and empty1 and empty2 and empty3:
+                moves["O-O-O"] = Move(
+                    player=piece.color,
+                    piece=piece,
+                    start=piece.pos,
+                    end="",
+                    is_valid=True,
+                    is_castle=True,
+                    is_long_castle=True,
+                )
+
+        if state.current_player == ColorType.BLACK and not state.b_has_castled:
+            # Short castle
+            king = state["e8"].type == PieceType.KING
+            rook = state["h8"].type == PieceType.ROOK
+            empty1 = state["f8"].empty
+            empty2 = state["g8"].empty
+            if king and rook and empty1 and empty2:
+                moves["O-O"] = Move(
+                    player=piece.color,
+                    piece=piece,
+                    start=piece.pos,
+                    end="",
+                    is_valid=True,
+                    is_castle=True,
+                    is_long_castle=False,
+                )
+
+            # Long castle
+            king = state["e8"].type == PieceType.KING
+            rook = state["a8"].type == PieceType.ROOK
+            empty1 = state["b8"].empty
+            empty2 = state["c8"].empty
+            empty3 = state["d8"].empty
+            if king and rook and empty1 and empty2 and empty3:
+                moves["O-O-O"] = Move(
+                    player=piece.color,
+                    piece=piece,
+                    start=piece.pos,
+                    end="",
+                    is_valid=True,
+                    is_castle=True,
+                    is_long_castle=True,
+                )
 
         Rules._cache[start] = moves
         return moves
@@ -506,7 +606,6 @@ class Rules:
 
 if __name__ == "__main__":
     board = GameState.initialize()
-    board.print()
     # play a few moves
     for _ in range(999):
         moves = board.get_legal_moves()
@@ -514,9 +613,9 @@ if __name__ == "__main__":
             break
         move = random.choice(list(moves.values()))
         board = board.apply_move(move)
-        board.print()
         if board.ended:
             break
+    board.print()
     if not moves:
         print("No more moves!")
     if board.winner != ColorType.EMPTY:

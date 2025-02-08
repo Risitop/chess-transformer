@@ -125,23 +125,6 @@ class Move(NamedTuple):
             repr += "=" + str(self.is_promotion_to)
         return repr
 
-    @classmethod
-    def invalid(cls) -> "Move":
-        """Returns an invalid move."""
-        return cls(
-            player=ColorType.EMPTY,
-            piece=Piece(PieceState.EMPTY, ""),
-            start="",
-            end="",
-            repr="",
-            is_valid=False,
-            is_capture=False,
-            is_castle=False,
-            is_long_castle=False,
-            is_promotion=False,
-            is_promotion_to=None,
-        )
-
     @property
     def is_capture_type(self) -> PieceType:
         """Returns the type of the captured piece."""
