@@ -62,6 +62,7 @@ class ChessBigram(nn.Module):
         batch_size: int = 16,
         epochs: int = 30,
         lr: float = 1e-2,
+        early_stopping: int = 3,
     ) -> "ChessBigram":
         """Train the model on a dataset."""
         train_dataset = ChessDataset.parse_training_data(
@@ -74,6 +75,7 @@ class ChessBigram(nn.Module):
         val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
         optimizer = torch.optim.AdamW(self.parameters(), lr=lr)
 
+        patience, best_val, best_model = early_stopping, float("inf"), None
         print("Launching training...")
         for epoch in range(epochs):
             self.train()
@@ -90,6 +92,16 @@ class ChessBigram(nn.Module):
                 with torch.no_grad():
                     loss = self.step(x, y)
                     total_loss_v += loss.item()
+                    if total_loss_v < best_val:
+                        best_val = total_loss_v
+                        best_model = self.state_dict()
+                        patience = early_stopping
+                    else:
+                        patience -= 1
+                        if patience == 0:
+                            print("Early stopping.")
+                            self.load_state_dict(best_model)
+                            return self
             print(
                 f"Epoch {epoch} | Train loss: {total_loss_t / len(train_loader):.2f} "
                 f"| Val loss: {total_loss_v / len(val_loader):.2f}"
