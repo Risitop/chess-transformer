@@ -1,48 +1,9 @@
 from dataclasses import dataclass
 import numpy as np
-from enum import Enum
 from typing import NamedTuple
+from chess.engine.piece import ColorType, Piece, PieceState, PieceType
 
-T_POS = str | np.uint64
-
-
-class ColorType(Enum):
-    """Represents a chess piece color."""
-
-    WHITE = 0
-    BLACK = 1
-
-
-class PieceType(Enum):
-    """Represents a chess piece."""
-
-    PAWN = 0
-    KNIGHT = 1
-    BISHOP = 2
-    ROOK = 3
-    QUEEN = 4
-    KING = 5
-
-
-class Piece(NamedTuple):
-    type: PieceType | None
-    color: ColorType | None
-    pos: np.uint64
-
-    def __repr__(self) -> str:
-        if self.empty:
-            return ".."
-        return "PNBRQK"[self.type.value] + "wb"[self.color.value]  # type: ignore
-
-    @property
-    def empty(self) -> bool:
-        """Returns True if the piece is empty."""
-        return self.type is None
-
-    @property
-    def coords(self) -> str:
-        """Returns the piece's coordinates."""
-        return _uint64_pos_to_str(self.pos)
+_T_POS = str | np.uint64
 
 
 class Move(NamedTuple):
@@ -121,96 +82,96 @@ class GameState:
             b_king=np.uint64(0x1000000000000000),
         )
 
-    def __getitem__(self, pos: T_POS) -> Piece:
+    def __getitem__(self, pos: _T_POS) -> Piece:
         """Returns the piece at a position."""
         if isinstance(pos, str):
             pos = _str_pos_to_uint64(pos)
         if pos.bit_count() != 1:
             raise ValueError(f"Invalid position: {pos}")
         if self.w_pawn & pos:
-            return Piece(PieceType.PAWN, ColorType.WHITE, pos)
+            return Piece(PieceState.PAWN_W, pos)
         if self.w_rook & pos:
-            return Piece(PieceType.ROOK, ColorType.WHITE, pos)
+            return Piece(PieceState.ROOK_W, pos)
         if self.w_knight & pos:
-            return Piece(PieceType.KNIGHT, ColorType.WHITE, pos)
+            return Piece(PieceState.KNIGHT_W, pos)
         if self.w_bishop & pos:
-            return Piece(PieceType.BISHOP, ColorType.WHITE, pos)
+            return Piece(PieceState.BISHOP_W, pos)
         if self.w_queen & pos:
-            return Piece(PieceType.QUEEN, ColorType.WHITE, pos)
+            return Piece(PieceState.QUEEN_W, pos)
         if self.w_king & pos:
-            return Piece(PieceType.KING, ColorType.WHITE, pos)
+            return Piece(PieceState.KING_W, pos)
         if self.b_pawn & pos:
-            return Piece(PieceType.PAWN, ColorType.BLACK, pos)
+            return Piece(PieceState.PAWN_B, pos)
         if self.b_rook & pos:
-            return Piece(PieceType.ROOK, ColorType.BLACK, pos)
+            return Piece(PieceState.ROOK_B, pos)
         if self.b_knight & pos:
-            return Piece(PieceType.KNIGHT, ColorType.BLACK, pos)
+            return Piece(PieceState.KNIGHT_B, pos)
         if self.b_bishop & pos:
-            return Piece(PieceType.BISHOP, ColorType.BLACK, pos)
+            return Piece(PieceState.BISHOP_B, pos)
         if self.b_queen & pos:
-            return Piece(PieceType.QUEEN, ColorType.BLACK, pos)
+            return Piece(PieceState.QUEEN_B, pos)
         if self.b_king & pos:
-            return Piece(PieceType.KING, ColorType.BLACK, pos)
-        return Piece(None, None, pos)
+            return Piece(PieceState.KING_B, pos)
+        return Piece(PieceState.EMPTY, pos)
 
-    def __setitem__(self, pos: T_POS, piece: Piece) -> None:
+    def __setitem__(self, pos: _T_POS, piece: Piece) -> None:
         """Sets the piece at a position."""
         if isinstance(pos, str):
             pos = _str_pos_to_uint64(pos)
         if piece.color == ColorType.WHITE:
             if piece.type == PieceType.PAWN:
-                self.w_pawn |= pos  # type: ignore
+                self.w_pawn |= pos
             elif piece.type == PieceType.ROOK:
-                self.w_rook |= pos  # type: ignore
+                self.w_rook |= pos
             elif piece.type == PieceType.KNIGHT:
-                self.w_knight |= pos  # type: ignore
+                self.w_knight |= pos
             elif piece.type == PieceType.BISHOP:
-                self.w_bishop |= pos  # type: ignore
+                self.w_bishop |= pos
             elif piece.type == PieceType.QUEEN:
-                self.w_queen |= pos  # type: ignore
+                self.w_queen |= pos
             elif piece.type == PieceType.KING:
-                self.w_king |= pos  # type: ignore
+                self.w_king |= pos
         elif piece.color == ColorType.BLACK:
             if piece.type == PieceType.PAWN:
-                self.b_pawn |= pos  # type: ignore
+                self.b_pawn |= pos
             elif piece.type == PieceType.ROOK:
-                self.b_rook |= pos  # type: ignore
+                self.b_rook |= pos
             elif piece.type == PieceType.KNIGHT:
-                self.b_knight |= pos  # type: ignore
+                self.b_knight |= pos
             elif piece.type == PieceType.BISHOP:
-                self.b_bishop |= pos  # type: ignore
+                self.b_bishop |= pos
             elif piece.type == PieceType.QUEEN:
-                self.b_queen |= pos  # type: ignore
+                self.b_queen |= pos
             elif piece.type == PieceType.KING:
-                self.b_king |= pos  # type: ignore
-        elif piece.color is None:  # Empty square
+                self.b_king |= pos
+        elif piece.color is None:
             current = self[pos]
             if current.color == ColorType.WHITE:
                 if current.type == PieceType.PAWN:
-                    self.w_pawn &= ~pos  # type: ignore
+                    self.w_pawn &= ~pos
                 elif current.type == PieceType.ROOK:
-                    self.w_rook &= ~pos  # type: ignore
+                    self.w_rook &= ~pos
                 elif current.type == PieceType.KNIGHT:
-                    self.w_knight &= ~pos  # type: ignore
+                    self.w_knight &= ~pos
                 elif current.type == PieceType.BISHOP:
-                    self.w_bishop &= ~pos  # type: ignore
+                    self.w_bishop &= ~pos
                 elif current.type == PieceType.QUEEN:
-                    self.w_queen &= ~pos  # type: ignore
+                    self.w_queen &= ~pos
                 elif current.type == PieceType.KING:
-                    self.w_king &= ~pos  # type: ignore
+                    self.w_king &= ~pos
             elif current.color == ColorType.BLACK:
                 if current.type == PieceType.PAWN:
-                    self.b_pawn &= ~pos  # type: ignore
+                    self.b_pawn &= ~pos
                 elif current.type == PieceType.ROOK:
-                    self.b_rook &= ~pos  # type: ignore
+                    self.b_rook &= ~pos
                 elif current.type == PieceType.KNIGHT:
-                    self.b_knight &= ~pos  # type: ignore
+                    self.b_knight &= ~pos
                 elif current.type == PieceType.BISHOP:
-                    self.b_bishop &= ~pos  # type: ignore
+                    self.b_bishop &= ~pos
                 elif current.type == PieceType.QUEEN:
-                    self.b_queen &= ~pos  # type: ignore
+                    self.b_queen &= ~pos
                 elif current.type == PieceType.KING:
-                    self.b_king &= ~pos  # type: ignore
+                    self.b_king &= ~pos
         else:
             raise ValueError(f"Invalid piece: {piece}")
 
@@ -234,7 +195,7 @@ class GameState:
             in_check=self.in_check,
         )
 
-    def apply_move(self, start: T_POS, end: T_POS) -> "GameState":
+    def apply_move(self, start: _T_POS, end: _T_POS) -> "GameState":
         """Applies a move to the game state."""
         new_state = self.copy()
         if isinstance(start, str):
@@ -242,7 +203,7 @@ class GameState:
         if isinstance(end, str):
             end = _str_pos_to_uint64(end)
         new_state[end] = new_state[start]
-        new_state[start] = Piece(None, None, start)
+        new_state[start] = Piece(PieceState.EMPTY, start)
         return new_state
 
     def print(self) -> None:
