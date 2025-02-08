@@ -146,6 +146,24 @@ class GameState:
             if piece.state == state:
                 self._set_state(state, bitboard | pos)
 
+    def print(self) -> None:
+        """Prints the board state."""
+        print(f"Player: {self.current_player.name} / Last: {self.last_move}")
+        # Move history
+        print("> ", end="")
+        for i, move in enumerate(self.moves):
+            if i % 2 == 0:
+                print(f"{i // 2 + 1}.", end=" ")
+            print(move, end=" ")
+        print()
+        for row in range(8, 0, -1):
+            print(row, end=" - ")
+            for col in "abcdefgh":
+                print(self[col + str(row)], end=" ")
+            print()
+        print("    A  B  C  D  E  F  G  H")
+        print()
+
     def apply_move(self, move: Move) -> "GameState":
         """Applies a move to the game state."""
         if not move.is_valid:
@@ -166,24 +184,6 @@ class GameState:
         self.current_player = self._switch_turn()
         return self
 
-    def print(self) -> None:
-        """Prints the board state."""
-        print(f"Player: {self.current_player.name} / Last: {self.last_move}")
-        # Move history
-        print("> ", end="")
-        for i, move in enumerate(self.moves):
-            if i % 2 == 0:
-                print(f"{i // 2 + 1}.", end=" ")
-            print(move, end=" ")
-        print()
-        for row in range(8, 0, -1):
-            print(row, end=" - ")
-            for col in "abcdefgh":
-                print(self[col + str(row)], end=" ")
-            print()
-        print("    A  B  C  D  E  F  G  H")
-        print()
-
     def get_legal_moves(self) -> dict[str, Move]:
         """Returns all legal moves for the current player."""
         moves = {}
@@ -194,6 +194,17 @@ class GameState:
                     continue
                 if piece.type == PieceType.PAWN:
                     moves.update(Rules.get_pawn_moves(piece, (row, col), self))
+                if piece.type == PieceType.ROOK:
+                    moves.update(Rules.get_rook_moves(piece, (row, col), self))
+                if piece.type == PieceType.BISHOP:
+                    moves.update(Rules.get_bishop_moves(piece, (row, col), self))
+                if piece.type == PieceType.QUEEN:
+                    moves.update(Rules.get_rook_moves(piece, (row, col), self))
+                    moves.update(Rules.get_bishop_moves(piece, (row, col), self))
+                if piece.type == PieceType.KNIGHT:
+                    moves.update(Rules.get_knight_moves(piece, (row, col), self))
+                if piece.type == PieceType.KING:
+                    moves.update(Rules.get_king_moves(piece, (row, col), self))
         return moves
 
     @property
@@ -247,7 +258,6 @@ class Rules:
                     start=utils.cartesian_to_str_pos(start),
                     end=dest,
                     is_valid=True,
-                    repr=dest,
                     is_double_pawn_push=step_size == 2,
                 )
 
@@ -264,7 +274,6 @@ class Rules:
                     start=utils.cartesian_to_str_pos(start),
                     end=dest[:-1],
                     is_valid=True,
-                    repr=dest,
                     is_capture=True,
                     is_capture_type_=state[diag_square].type,
                 )
@@ -284,7 +293,6 @@ class Rules:
                 start=utils.cartesian_to_str_pos(start),
                 end=dest[:-1],
                 is_valid=True,
-                repr=dest,
                 is_capture=True,
                 is_capture_type_=PieceType.PAWN,
             )
@@ -310,7 +318,6 @@ class Rules:
                     start=move.start,
                     end=move.end,
                     is_valid=True,
-                    repr=dest_,
                     is_promotion=True,
                     is_promotion_to=promotion,
                     is_capture=move.is_capture,
@@ -320,20 +327,196 @@ class Rules:
         Rules._cache[start] = moves
         return moves
 
+    @staticmethod
+    def get_rook_moves(
+        piece: Piece, start: tuple[int, int], state: GameState
+    ) -> dict[str, Move]:
+        """Returns all valid, non-capture rook moves from a position."""
+        if start in Rules._cache:
+            return Rules._cache[start]
+
+        strart_str = utils.cartesian_to_str_pos(start)
+        moves = {}
+        for direction in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            for step in range(1, 8):
+                dest = (start[0] + direction[0] * step, start[1] + direction[1] * step)
+                if dest[0] < 0 or dest[0] >= 8 or dest[1] < 0 or dest[1] >= 8:
+                    break
+                dest_str = utils.cartesian_to_str_pos(dest)
+                if not state[dest].empty:
+                    if state[dest].color != piece.color:
+                        dest_ = f"R{dest_str}+"
+                        moves[dest_] = Move(
+                            player=piece.color,
+                            piece=piece,
+                            start=strart_str,
+                            end=dest_str,
+                            is_valid=True,
+                            is_capture=True,
+                            is_capture_type_=state[dest].type,
+                        )
+                    break
+                moves[dest_str] = Move(
+                    player=piece.color,
+                    piece=piece,
+                    start=strart_str,
+                    end=dest_str,
+                    is_valid=True,
+                )
+
+        Rules._cache[start] = moves
+        return moves
+
+    @staticmethod
+    def get_bishop_moves(
+        piece: Piece, start: tuple[int, int], state: GameState
+    ) -> dict[str, Move]:
+        """Returns all valid, non-capture bishop moves from a position."""
+        if start in Rules._cache:
+            return Rules._cache[start]
+
+        strart_str = utils.cartesian_to_str_pos(start)
+        moves = {}
+        for direction in ((1, 1), (-1, 1), (1, -1), (-1, -1)):
+            for step in range(1, 8):
+                dest = (start[0] + direction[0] * step, start[1] + direction[1] * step)
+                if dest[0] < 0 or dest[0] >= 8 or dest[1] < 0 or dest[1] >= 8:
+                    break
+                dest_str = utils.cartesian_to_str_pos(dest)
+                if not state[dest].empty:
+                    if state[dest].color != piece.color:
+                        dest_ = f"{dest_str}+"
+                        moves[dest_] = Move(
+                            player=piece.color,
+                            piece=piece,
+                            start=strart_str,
+                            end=dest_str,
+                            is_valid=True,
+                            is_capture=True,
+                            is_capture_type_=state[dest].type,
+                        )
+                    break
+                moves[dest_str] = Move(
+                    player=piece.color,
+                    piece=piece,
+                    start=strart_str,
+                    end=dest_str,
+                    is_valid=True,
+                )
+
+        Rules._cache[start] = moves
+        return moves
+
+    @staticmethod
+    def get_knight_moves(
+        piece: Piece, start: tuple[int, int], state: GameState
+    ) -> dict[str, Move]:
+        """Returns all valid, non-capture knight moves from a position."""
+        if start in Rules._cache:
+            return Rules._cache[start]
+
+        strart_str = utils.cartesian_to_str_pos(start)
+        moves = {}
+        for direction in (
+            (2, 1),
+            (-2, 1),
+            (2, -1),
+            (-2, -1),
+            (1, 2),
+            (-1, 2),
+            (1, -2),
+            (-1, -2),
+        ):
+            dest = (start[0] + direction[0], start[1] + direction[1])
+            if dest[0] < 0 or dest[0] >= 8 or dest[1] < 0 or dest[1] >= 8:
+                continue
+            dest_str = utils.cartesian_to_str_pos(dest)
+            if not state[dest].empty:
+                if state[dest].color != piece.color:
+                    dest_ = f"{dest_str}+"
+                    moves[dest_] = Move(
+                        player=piece.color,
+                        piece=piece,
+                        start=strart_str,
+                        end=dest_str,
+                        is_valid=True,
+                        is_capture=True,
+                        is_capture_type_=state[dest].type,
+                    )
+                continue
+            moves[dest_str] = Move(
+                player=piece.color,
+                piece=piece,
+                start=strart_str,
+                end=dest_str,
+                is_valid=True,
+            )
+
+        Rules._cache[start] = moves
+        return moves
+
+    @staticmethod
+    def get_king_moves(
+        piece: Piece, start: tuple[int, int], state: GameState
+    ) -> dict[str, Move]:
+        """Returns all valid, non-capture king moves from a position."""
+        if start in Rules._cache:
+            return Rules._cache[start]
+
+        strart_str = utils.cartesian_to_str_pos(start)
+        moves = {}
+        for direction in (
+            (1, 0),
+            (-1, 0),
+            (0, 1),
+            (0, -1),
+            (1, 1),
+            (-1, 1),
+            (1, -1),
+            (-1, -1),
+        ):
+            dest = (start[0] + direction[0], start[1] + direction[1])
+            if dest[0] < 0 or dest[0] >= 8 or dest[1] < 0 or dest[1] >= 8:
+                continue
+            dest_str = utils.cartesian_to_str_pos(dest)
+            if not state[dest].empty:
+                if state[dest].color != piece.color:
+                    dest_ = f"{dest_str}+"
+                    moves[dest_] = Move(
+                        player=piece.color,
+                        piece=piece,
+                        start=strart_str,
+                        end=dest_str,
+                        is_valid=True,
+                        is_capture=True,
+                        is_capture_type_=state[dest].type,
+                    )
+                continue
+            moves[dest_str] = Move(
+                player=piece.color,
+                piece=piece,
+                start=strart_str,
+                end=dest_str,
+                is_valid=True,
+            )
+
+        Rules._cache[start] = moves
+        return moves
+
 
 if __name__ == "__main__":
     board = GameState.initialize()
     board.print()
     # play a few moves
-    for _ in range(100):
+    for _ in range(999):
         moves = board.get_legal_moves()
         if not moves:
             break
         move = random.choice(list(moves.values()))
         board = board.apply_move(move)
+        board.print()
         if board.ended:
             break
-    board.print()
     if not moves:
         print("No more moves!")
     if board.winner != ColorType.EMPTY:

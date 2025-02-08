@@ -105,7 +105,6 @@ class Move(NamedTuple):
     start: str
     end: str
     is_valid: bool
-    repr: str
     is_capture: bool = False
     is_capture_type_: PieceType | None = None
     is_castle: bool = False
@@ -116,7 +115,15 @@ class Move(NamedTuple):
 
     def __str__(self) -> str:
         """Returns the move as a standardized string."""
-        return self.repr
+        if self.is_castle:
+            return "O-O-O" if self.is_long_castle else "O-O"
+        repr = str(self.piece.type) + self.start
+        if self.is_capture:
+            repr += "x"
+        repr += self.end
+        if self.is_promotion:
+            repr += "=" + str(self.is_promotion_to)
+        return repr
 
     @classmethod
     def invalid(cls) -> "Move":
