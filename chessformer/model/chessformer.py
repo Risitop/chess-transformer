@@ -87,17 +87,19 @@ class Chessformer(nn.Module):
     def step(self, board: chess.Board) -> torch.Tensor:
         board_state = _vectorize_board(board)
         logits = self.forward(board_state)
-        logits = F.softmax(logits, dim=-1)
-        legal_moves = [move.uci() for move in board.legal_moves]
-        target = torch.zeros(len(self.all_moves))
-        for move in legal_moves:
-            target[self.move2idx[move]] = 1.0 / len(legal_moves)
-        loss = F.cross_entropy(logits, target)
+        action_probs = F.softmax(logits, dim=-1)
 
-        top_idx = torch.argmax(logits).item()
-        top_move = self.idx2move[top_idx]  # type: ignore
-        if top_move in legal_moves:
-            board.push_uci(top_move)
+        # Calculate move legality loss
+        legal_moves = [move.uci() for move in board.legal_moves]
+        legal_target = torch.zeros(len(self.all_moves))
+        legal_idx = [self.move2idx[move] for move in legal_moves]
+        legal_target[legal_idx] = 1.0 / len(legal_moves)
+        loss = F.cross_entropy(action_probs, legal_target)
+
+        # Keep track of the chosen policy
+        action_dist = torch.distributions.Categorical(action_probs[legal_idx])
+        action = action_dist.sample()
+        board.push_uci(legal_moves[action.item()])  # type: ignore
 
         return loss
 
