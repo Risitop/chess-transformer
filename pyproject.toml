@@ -1,5 +1,5 @@
 [project]
-name = "chessGPT"
+name = "chessformer"
 version = "0.1.0"
 description = ""
 authors = [{name = "Risitop"}]

@@ -13,3 +13,4 @@ poetry.lock
 .vscode
 *.ipynb
 !chessgpt/data/
+.archive
