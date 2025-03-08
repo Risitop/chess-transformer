@@ -1,5 +1,6 @@
 import dataclasses
 import logging
+import time
 from pathlib import Path
 
 import chess
@@ -7,9 +8,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from chessformer.model.mlp import MLP
 from chessformer import utils
-import time
+from chessformer.model.mlp import MLP
 
 _MOVES_PTH = Path(__file__).parent.parent.parent / "assets" / "all_moves.txt"
 _GAMES_PTH = Path(__file__).parent.parent.parent / "out"
