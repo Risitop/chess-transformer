@@ -1,5 +1,4 @@
 import dataclasses
-import logging
 import time
 from pathlib import Path
 
@@ -8,9 +7,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from chessformer import utils, logging
+from chessformer import logging, utils
 from chessformer.model.mlp import MLP
-import time
 
 _MOVES_PTH = Path(__file__).parent.parent.parent / "assets" / "all_moves.txt"
 _GAMES_PTH = Path(__file__).parent.parent.parent / "out"
@@ -203,7 +201,7 @@ class Chessformer(nn.Module):
 
             # Accumulate the losses and backpropagate
             batch_loss: torch.Tensor = 0  # type: ignore
-            for game_losses, game_actions in zip(all_losses, all_probs):
+            for board, game_losses, game_actions in zip(boards, all_losses, all_probs):
                 batch_loss += sum(game_losses) / len(game_losses)
                 if board.is_checkmate():
                     if board.result() == "1-0":

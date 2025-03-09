@@ -1,5 +1,6 @@
-from chessformer.model import Chessformer
 import torch
+
+from chessformer.model import Chessformer
 
 MODEL_KWARGS = dict(
     n_hidden=3,
@@ -16,7 +17,7 @@ TRAIN_KWARGS = dict(
     learning_rate_min=1e-6,
     weight_decay=1e-4,
     gradient_clip=1.0,
-    checkmate_reward=100.0,
+    checkmate_reward=200.0,
     reward_discount=0.99,
 )
 
