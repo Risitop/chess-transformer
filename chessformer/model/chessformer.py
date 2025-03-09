@@ -166,6 +166,8 @@ class Chessformer(nn.Module):
             self.parameters(), lr=learning_rate, weight_decay=weight_decay
         )
 
+        logging.info(f"Training Chessformer for {n_games} games.")
+
         for game_n in range(0, n_games, batch_size):
             tstart = time.time()
 
@@ -174,6 +176,7 @@ class Chessformer(nn.Module):
             is_active = [True] * batch_size
             all_losses = [[] for _ in range(batch_size)]
             all_probs = [[] for _ in range(batch_size)]
+            finished_games = 0
 
             # Play the games in parallel until all are over
             for _ in range(moves_per_game):
@@ -187,6 +190,7 @@ class Chessformer(nn.Module):
                     all_losses[idx].append(loss)
                     all_probs[idx].append(StateAction(action, board.turn))
                     if board.is_game_over():
+                        finished_games += 1
                         is_active[idx] = False
                         pct_finished = 100 * (1 - sum(is_active) / batch_size)
                         print(
@@ -194,10 +198,9 @@ class Chessformer(nn.Module):
                             f"{pct_finished:5.1f}% ]",
                             end="\r",
                         )
+
                 if not any(is_active):
                     break
-
-            # loss: torch.Tensor = sum(losses) / len(losses)  # type: ignore
 
             # Accumulate the losses and backpropagate
             batch_loss: torch.Tensor = 0  # type: ignore
@@ -217,23 +220,27 @@ class Chessformer(nn.Module):
             nn.utils.clip_grad_norm_(self.parameters(), gradient_clip)
             optimizer.step()
 
-            tend = time.time()
-
-            print(
-                f"[ Games {game_n}-{game_n + batch_size}/{n_games}\t100.0% ] "
-                f"Loss: {loss.item():.4f} / "
-                f"LR: {learning_rate:.2e} / ",
-                f"{(tend - tstart) / batch_size:.2f}s/game",
-                end=" " * 20 + "\r",
-            )
-            if not (game_n % log_every_n):
-                with open(self.games_path, "a") as f:
-                    f.write(utils.board_to_pgn(board) + "\n")
-
             # Learning rate decay
             learning_rate = max(learning_rate * learning_rate_decay, learning_rate_min)
             for param_group in optimizer.param_groups:
                 param_group["lr"] = learning_rate
+
+            # Monitoring
+            with open(self.games_path, "a") as f:
+                f.write(utils.board_to_pgn(boards[0]) + "\n")
+
+            tend = time.time()
+
+            message = (
+                f"[ Games {game_n}-{game_n + batch_size}/{n_games}\t100.0% ] "
+                f"Finished: {100 * finished_games / batch_size:5.1f}% / "
+                f"Loss: {loss.item():.4f} / "
+                f"LR: {learning_rate:.2e} / "
+                f"{(tend - tstart) / batch_size:.2f}s/game / "
+                f"ETA: {((n_games - game_n) / batch_size) * (tend - tstart):.2f}s"
+            )
+            print(message, end=" " * 20 + "\r")
+            logging.debug(message)
 
         return self
 

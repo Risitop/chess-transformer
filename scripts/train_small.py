@@ -10,7 +10,7 @@ MODEL_KWARGS = dict(
     dropout_rate=0.2,
 )
 TRAIN_KWARGS = dict(
-    n_games=500,
+    n_games=1000,
     batch_size=32,
     learning_rate=1e-3,
     learning_rate_decay=0.99,
