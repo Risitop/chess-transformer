@@ -30,13 +30,17 @@ class MLP(nn.Module):
         super().__init__()
         self.layers = nn.ModuleList()
         self.layers.append(nn.Linear(in_size, dim_hidden))
+        self.layers.append(nn.LayerNorm(dim_hidden))
         self.layers.append(nn.LeakyReLU())
         self.layers.append(nn.Dropout(dropout_rate))
         for _ in range(n_hidden - 1):
             self.layers.append(nn.Linear(dim_hidden, dim_hidden))
+            self.layers.append(nn.LayerNorm(dim_hidden))
             self.layers.append(nn.LeakyReLU())
             self.layers.append(nn.Dropout(dropout_rate))
         self.layers.append(nn.Linear(dim_hidden, out_size))
+        self.layers.append(nn.LayerNorm(out_size))
+        self.layers.append(nn.LeakyReLU())
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         for layer in self.layers[:-1]:

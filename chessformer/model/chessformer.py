@@ -209,11 +209,11 @@ class Chessformer(nn.Module):
                 ):
                     loss, actions = self.step(active_boards)
 
-                    if mode == "pretrain":
-                        optimizer.zero_grad()
-                        loss.backward()
-                        nn.utils.clip_grad_norm_(self.parameters(), gradient_clip)
-                        optimizer.step()
+                if mode == "pretrain":
+                    optimizer.zero_grad()
+                    loss.backward()
+                    nn.utils.clip_grad_norm_(self.parameters(), gradient_clip)
+                    optimizer.step()
 
                 for idx, board, action in zip(active_idx, active_boards, actions):
                     all_losses[idx].append(loss)
