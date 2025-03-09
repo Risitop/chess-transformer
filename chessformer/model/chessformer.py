@@ -68,6 +68,7 @@ class Chessformer(nn.Module):
         self.combiner = MLP(
             2 * dim_hidden, dim_hidden, n_hidden, dim_hidden, dropout_rate
         )
+        self.dropout1 = nn.Dropout(dropout_rate)
         self.mha = nn.TransformerEncoder(
             nn.TransformerEncoderLayer(
                 dim_hidden,
@@ -78,6 +79,7 @@ class Chessformer(nn.Module):
             ),
             num_layers=n_layers,
         )
+        self.dropout2 = nn.Dropout(dropout_rate)
         self.decoder = MLP(
             _INPUT_SIZE * dim_hidden,
             len(self.all_moves),
@@ -100,8 +102,10 @@ class Chessformer(nn.Module):
         pos_emb = self.emb_pos(pos)
         stacked = torch.cat([state_emb, pos_emb], dim=-1)
         x = self.combiner(stacked)  # (130, C) -> (_INPUT_SIZE, C)
+        x = self.dropout1(x)
         x = self.mha(x)  # (B, _INPUT_SIZE, C)
-        return self.decoder(x.reshape(B, -1))  # Decode the player token
+        x = self.dropout2(x)
+        return self.decoder(x.reshape(B, -1))  # Decode the output
 
     def step(self, boards: list[chess.Board]) -> tuple[torch.Tensor, torch.Tensor]:
         """Take a step in the games, return the legal loss and illegal proba."""
