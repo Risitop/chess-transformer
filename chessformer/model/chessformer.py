@@ -214,6 +214,7 @@ class Chessformer(nn.Module):
                     batch_loss += _get_total_policy_loss(
                         game_actions, reward, reward_discount
                     )
+            batch_loss /= batch_size
 
             optimizer.zero_grad()
             batch_loss.backward()
@@ -234,7 +235,7 @@ class Chessformer(nn.Module):
             message = (
                 f"[ Games {game_n}-{game_n + batch_size}/{n_games}\t100.0% ] "
                 f"Finished: {100 * finished_games / batch_size:5.1f}% / "
-                f"Loss: {loss.item():.4f} / "
+                f"Loss: {batch_loss.item():.4f} / "
                 f"LR: {learning_rate:.2e} / "
                 f"{(tend - tstart) / batch_size:.2f}s/game / "
                 f"ETA: {((n_games - game_n) / batch_size) * (tend - tstart):.2f}s"
