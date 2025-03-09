@@ -14,6 +14,7 @@ from chessformer.model.mlp import MLP
 _MOVES_PTH = Path(__file__).parent.parent.parent / "assets" / "all_moves.txt"
 _GAMES_PTH = Path(__file__).parent.parent.parent / "out"
 _PIECE2IDX = {piece: 1 + index for index, piece in enumerate("PNBRQKpnbrqk")}
+_INPUT_SIZE = 67  # 64 squares + player + castling rights
 
 
 @dataclasses.dataclass
@@ -61,7 +62,7 @@ class Chessformer(nn.Module):
 
         # Model
         self.emb_piece = nn.Embedding(13, dim_hidden)
-        self.emb_pos = nn.Embedding(65, dim_hidden)
+        self.emb_pos = nn.Embedding(_INPUT_SIZE, dim_hidden)
         self.combiner = MLP(
             2 * dim_hidden, dim_hidden, n_hidden, dim_hidden, dropout_rate
         )
@@ -76,7 +77,9 @@ class Chessformer(nn.Module):
             num_layers=n_layers,
         )
         self.decoder = MLP(dim_hidden, 1, 2, dim_hidden, dropout_rate)
-        self.mlp = MLP(65, len(self.all_moves), n_hidden, dim_hidden, dropout_rate)
+        self.mlp = MLP(
+            _INPUT_SIZE, len(self.all_moves), n_hidden, dim_hidden, dropout_rate
+        )
 
         nparams = sum(p.numel() for p in self.parameters() if p.requires_grad)
         logging.info(f"Chessformer initialized with {nparams} trainable parameters.")
@@ -87,11 +90,11 @@ class Chessformer(nn.Module):
 
     def forward(self, state: torch.Tensor) -> torch.Tensor:
         B, T = state.shape
-        pos = torch.tile(torch.arange(65, device=self.device), (B, 1))
+        pos = torch.tile(torch.arange(_INPUT_SIZE, device=self.device), (B, 1))
         state_emb = self.emb_piece(state)
         pos_emb = self.emb_pos(pos)
         stacked = torch.cat([state_emb, pos_emb], dim=-1)
-        x = self.combiner(stacked)  # (130, C) -> (65, C)
+        x = self.combiner(stacked)  # (130, C) -> (_INPUT_SIZE, C)
         x = self.mha(x)
         x = self.decoder(x).squeeze()
         return self.mlp(x)
@@ -100,7 +103,7 @@ class Chessformer(nn.Module):
         """Take a step in the games, return the policy loss and the action proba."""
         batch_size = len(boards)
         state = _vectorize_boards(boards, self.device)
-        logits = self.forward(state)  # (B, 65) -> (B, O)
+        logits = self.forward(state)  # (B, _INPUT_SIZE) -> (B, O)
         if len(logits.shape) == 1:
             logits = logits.unsqueeze(0)
         action_probs = F.softmax(logits, dim=-1)
@@ -285,12 +288,14 @@ def _load_moves() -> list[str]:
 
 def _vectorize_boards(boards: list[chess.Board], device: torch.device) -> torch.Tensor:
     """Vectorize a chess board state for input to the model."""
-    # 1 + 64 for the player and the board state
-    board_state = torch.zeros(len(boards), 65, dtype=torch.long)
+    # 64 + player and if each player has castled
+    board_state = torch.zeros(len(boards), _INPUT_SIZE, dtype=torch.long)
     for idx, board in enumerate(boards):
         board_map = board.piece_map()
         for square, piece in board_map.items():
             board_state[idx, square] = _PIECE2IDX[piece.symbol()]
+        board_state[idx, -3] = board.has_castling_rights(chess.BLACK)
+        board_state[idx, -2] = board.has_castling_rights(chess.WHITE)
     board_state[:, -1] = board.turn
     return board_state.to(device)
 
