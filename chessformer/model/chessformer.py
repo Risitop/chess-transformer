@@ -1,4 +1,5 @@
 import dataclasses
+import random
 import time
 from pathlib import Path
 from typing import Literal
@@ -102,10 +103,8 @@ class Chessformer(nn.Module):
         x = self.mha(x)  # (B, _INPUT_SIZE, C)
         return self.decoder(x.reshape(B, -1))  # Decode the player token
 
-    def step(
-        self, boards: list[chess.Board], move_counts: list[np.ndarray]
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """Take a step in the games, return the policy loss and the action proba."""
+    def step(self, boards: list[chess.Board]) -> tuple[torch.Tensor, torch.Tensor]:
+        """Take a step in the games, return the legal loss and illegal proba."""
         batch_size = len(boards)
         state = _vectorize_boards(boards, self.device)
         logits = self.forward(state)  # (B, _INPUT_SIZE) -> (B, O)
@@ -115,37 +114,22 @@ class Chessformer(nn.Module):
 
         # Calculate move legality loss
         n_moves = len(self.all_moves)
-        illegal_target = torch.ones(
-            (batch_size, n_moves), device=self.device, dtype=torch.bool
+        illegal_target = torch.zeros(
+            (batch_size, n_moves), device=self.device, dtype=torch.float32
         )
-        chosen_probs = torch.zeros(batch_size, device=self.device)
-        loss_repeated_moves = 0.0
         for idx, board in enumerate(boards):
             legal_moves = [move.uci() for move in board.legal_moves]
             if len(legal_moves) == 0:
                 raise ValueError("No legal moves available.")
             legal_idx = [self.move2idx[move] for move in legal_moves]
-            illegal_target[idx, legal_idx] = False
-            if len(legal_moves) == 1:
-                chosen_probs[idx] = action_probs[idx, legal_idx[0]]
-                chosen_move = legal_moves[0]
-                chosen_idx = legal_idx[0]
-            else:
-                sub_probs = action_probs[idx, legal_idx].detach()
-                if torch.all(sub_probs == 0):
-                    sub_probs += 1e-7
-                action = torch.multinomial(sub_probs, num_samples=1)
-                chosen_probs[idx] = action_probs[idx, legal_idx[action]]
-                chosen_move = legal_moves[action.item()]  # type: ignore
-                chosen_idx = legal_idx[action]
+            illegal_target[idx, legal_idx] = 1.0 / len(legal_moves)
+            chosen_move = random.choice(legal_moves)
             board.push_uci(chosen_move)
-            loss_repeated_moves += move_counts[idx][chosen_idx] * chosen_probs[idx]
-            move_counts[idx][chosen_idx] += 1
 
-        loss_legal = (action_probs * illegal_target).sum(dim=1).mean()
-        loss_repeated_moves = loss_repeated_moves / batch_size
+        prob_illegal = (action_probs * (illegal_target == 0)).sum(dim=1).mean()
+        loss_legal = F.cross_entropy(action_probs, illegal_target)
 
-        return loss_legal, loss_repeated_moves, chosen_probs  # type: ignore
+        return loss_legal, prob_illegal
 
     def train(
         self,
@@ -160,7 +144,6 @@ class Chessformer(nn.Module):
         gradient_clip: float = 1.0,
         checkmate_reward: float = 100.0,
         reward_discount: float = 0.99,
-        repeat_penalty: float = 0.0,
     ) -> "Chessformer":
         """Train the model using self-play.
 
@@ -192,8 +175,6 @@ class Chessformer(nn.Module):
             Reward for a checkmate.
         reward_discount : float, optional
             Discount factor for rewards that are used to calculate the policy loss.
-        repeat_penalty : float, optional
-            Penalty for repeating a move, can be used to encourage diversity.
         """
         if not _GAMES_PTH.exists():
             _GAMES_PTH.mkdir()
@@ -210,9 +191,8 @@ class Chessformer(nn.Module):
             batch_size = min(batch_size, n_games - game_n)
             boards = [chess.Board() for _ in range(batch_size)]
             is_active = [True] * batch_size
-            move_counts = [np.zeros(len(self.all_moves))] * batch_size
-            legal_loss = 0.0
-            repeat_loss = 0.0
+            total_loss = 0.0
+            illegal_prob = 0.0
             finished_games = 0
             moves_left = max_moves_total
 
@@ -224,10 +204,9 @@ class Chessformer(nn.Module):
                     device_type=self.device.type,
                     enabled=self.device.type == "cuda",
                 ):
-                    lossl, lossr, _ = self.step(active_boards, move_counts)
-                    loss = lossl + repeat_penalty * lossr
-                    legal_loss += lossl
-                    repeat_loss += lossr
+                    loss, probl = self.step(active_boards)
+                    total_loss += loss
+                    illegal_prob += probl
 
                 if mode == "pretrain":
                     optimizer.zero_grad()
@@ -260,9 +239,8 @@ class Chessformer(nn.Module):
             for param_group in optimizer.param_groups:
                 param_group["lr"] = learning_rate
 
-            legal_loss /= moves_per_game
-            repeat_loss /= moves_per_game / repeat_penalty
-            total_loss = legal_loss + repeat_loss
+            total_loss /= moves_per_game
+            illegal_prob /= moves_per_game
 
             # Monitoring
             with open(self.games_path, "a") as f:
@@ -273,9 +251,8 @@ class Chessformer(nn.Module):
             message = (
                 f"[ Games {game_n}-{game_n + batch_size}/{n_games}\t100.0% ] "
                 f"Finished: {100 * finished_games / batch_size:5.1f}% / "
-                f"Loss (total): {total_loss.item():.3f} / "  # type: ignore
-                f"Loss (legal): {legal_loss.item():.3f} / "  # type: ignore
-                f"Loss (repeat): {repeat_loss.item():.3f} / "  # type: ignore
+                f"Loss: {total_loss.item():.3f} / "  # type: ignore
+                f"P(illegal): {illegal_prob.item():.3f} / "  # type: ignore
                 f"LR: {learning_rate:.2e} / "
                 f"{(tend - tstart) / batch_size:.2f}s/game / "
                 f"ETA: {((n_games - game_n) / batch_size) * (tend - tstart):.2f}s"
