@@ -100,6 +100,8 @@ class Chessformer(nn.Module):
         batch_size = len(boards)
         state = _vectorize_boards(boards, self.device)
         logits = self.forward(state)  # (B, 65) -> (B, O)
+        if len(logits.shape) == 1:
+            logits = logits.unsqueeze(0)
         action_probs = F.softmax(logits, dim=-1)
 
         # Calculate move legality loss
@@ -118,12 +120,10 @@ class Chessformer(nn.Module):
                 chosen_probs[idx] = action_probs[idx, legal_idx[0]]
                 chosen_move = legal_moves[0]
             else:
-                action_probs_i = F.softmax(
-                    # Avoids numerical instability
-                    torch.clamp(action_probs[idx, legal_idx], 1e-6, 1.0),
-                    dim=-1,
-                )
-                action = torch.multinomial(action_probs_i, num_samples=1)
+                sub_probs = action_probs[idx, legal_idx].detach()
+                if torch.all(sub_probs == 0):
+                    sub_probs += 1e-7
+                action = torch.multinomial(sub_probs, num_samples=1)
                 chosen_probs[idx] = action_probs[idx, legal_idx[action]]
                 chosen_move = legal_moves[action.item()]  # type: ignore
             board.push_uci(chosen_move)
