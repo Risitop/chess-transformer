@@ -1,6 +1,7 @@
 import dataclasses
 import time
 from pathlib import Path
+from typing import Literal
 
 import chess
 import torch
@@ -134,6 +135,7 @@ class Chessformer(nn.Module):
 
     def train(
         self,
+        mode: Literal["pretrain", "policy"],
         n_games: int,
         batch_size: int = 4,
         moves_per_game: int = 256,
@@ -144,12 +146,15 @@ class Chessformer(nn.Module):
         gradient_clip: float = 1.0,
         checkmate_reward: float = 100.0,
         reward_discount: float = 0.99,
-        warmup_games: int = 50,
     ) -> "Chessformer":
         """Train the model using self-play.
 
         Parameters
         ----------
+        mode : Literal["pretrain", "policy"]
+            Training mode.
+            - "pretrain": Train the model to predict legal moves.
+            - "policy": Train the model to predict the best move.
         n_games : int
             Number of games to play.
         batch_size : int, optional
@@ -172,9 +177,6 @@ class Chessformer(nn.Module):
             Reward for a checkmate.
         reward_discount : float, optional
             Discount factor for rewards that are used to calculate the policy loss.
-        warmup_games : int, optional
-            Number of games with only legal moves checking and more frequent
-            backpropagation.
         """
         if not _GAMES_PTH.exists():
             _GAMES_PTH.mkdir()
@@ -182,7 +184,7 @@ class Chessformer(nn.Module):
             self.parameters(), lr=learning_rate, weight_decay=weight_decay
         )
 
-        logging.info(f"Training Chessformer for {n_games} games.")
+        logging.info(f"Training Chessformer for {n_games} games. Mode: `{mode}`")
 
         for game_n in range(0, n_games, batch_size):
             tstart = time.time()
@@ -204,11 +206,11 @@ class Chessformer(nn.Module):
                 ):
                     loss, actions = self.step(active_boards)
 
-                if game_n < warmup_games:
-                    optimizer.zero_grad()
-                    loss.backward()
-                    nn.utils.clip_grad_norm_(self.parameters(), gradient_clip)
-                    optimizer.step()
+                    if mode == "pretrain":
+                        optimizer.zero_grad()
+                        loss.backward()
+                        nn.utils.clip_grad_norm_(self.parameters(), gradient_clip)
+                        optimizer.step()
 
                 for idx, board, action in zip(active_idx, active_boards, actions):
                     all_losses[idx].append(loss)
@@ -242,7 +244,7 @@ class Chessformer(nn.Module):
             batch_loss = legal_loss + policy_loss
             batch_loss /= batch_size
 
-            if game_n >= warmup_games:
+            if mode == "policy":
                 optimizer.zero_grad()
                 batch_loss.backward()
                 nn.utils.clip_grad_norm_(self.parameters(), gradient_clip)
