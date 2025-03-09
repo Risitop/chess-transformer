@@ -260,8 +260,8 @@ class Chessformer(nn.Module):
             for param_group in optimizer.param_groups:
                 param_group["lr"] = learning_rate
 
-            legal_loss /= batch_size
-            repeat_loss /= batch_size
+            legal_loss /= moves_per_game
+            repeat_loss /= moves_per_game / repeat_penalty
             total_loss = legal_loss + repeat_loss
 
             # Monitoring
