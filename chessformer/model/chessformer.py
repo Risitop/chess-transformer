@@ -77,7 +77,11 @@ class Chessformer(nn.Module):
             num_layers=n_layers,
         )
         self.decoder = MLP(
-            dim_hidden, len(self.all_moves), n_hidden, dim_hidden, dropout_rate
+            _INPUT_SIZE * dim_hidden,
+            len(self.all_moves),
+            n_hidden,
+            dim_hidden,
+            dropout_rate,
         )
 
         nparams = sum(p.numel() for p in self.parameters() if p.requires_grad)
@@ -95,7 +99,7 @@ class Chessformer(nn.Module):
         stacked = torch.cat([state_emb, pos_emb], dim=-1)
         x = self.combiner(stacked)  # (130, C) -> (_INPUT_SIZE, C)
         x = self.mha(x)  # (B, _INPUT_SIZE, C)
-        return self.decoder(x[:, -1, :])  # Decode the player token
+        return self.decoder(x.reshape(B, -1))  # Decode the player token
 
     def step(self, boards: list[chess.Board]) -> tuple[torch.Tensor, torch.Tensor]:
         """Take a step in the games, return the policy loss and the action proba."""
