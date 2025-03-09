@@ -2,13 +2,12 @@
 module centralizes the logging of all the modules of the project. It is build as
 a thin wrapper around the standard logging module.
 
-Log files are stored in the `.logs/` directory, located of the ScientaLab directory
+Log files are stored in the `.logs/` directory, located in the directory
 root. The log files are stored in directories named `logs-YYYY-MM-DD-HHh` where
 `YYYY-MM-DD-HHh` is the current date and hour.
 
 Basic usage
 ------------
->>> from common import logging
 >>> logging.debug("This is a debug message.") # Log file only
 >>> logging.info("This is an info message.") # Log file and console
 >>> logging.warning("This is a warning message.") # Log file and console
@@ -204,14 +203,6 @@ def _get_caller() -> str:
         return f"{file}:{line}"
     except IndexError:
         return "(unknown)"
-
-
-def basicConfig(*args, **kwargs) -> None:
-    """Does nothing, will raise a warning as basicConfig is discouraged."""
-    warning(
-        "-- The basicConfig function is discouraged, use logging.set_level instead.\n"
-        "-- This is discouraged because it would affect the root logger."
-    )
 
 
 def copy_log_file(dest_path: Path) -> None:
