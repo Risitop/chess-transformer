@@ -61,7 +61,9 @@ class Chessformer(nn.Module):
         # Model
         self.emb_piece = nn.Embedding(13, dim_hidden)
         self.emb_pos = nn.Embedding(65, dim_hidden)
-        self.combiner = MLP(2 * dim_hidden, dim_hidden, 2, dim_hidden, dropout_rate)
+        self.combiner = MLP(
+            2 * dim_hidden, dim_hidden, n_hidden, dim_hidden, dropout_rate
+        )
         self.mha = nn.TransformerEncoder(
             nn.TransformerEncoderLayer(
                 dim_hidden,
@@ -96,7 +98,7 @@ class Chessformer(nn.Module):
     def step(self, boards: list[chess.Board]) -> tuple[torch.Tensor, torch.Tensor]:
         """Take a step in the games, return the policy loss and the action proba."""
         batch_size = len(boards)
-        state = torch.stack([_vectorize_board(board, self.device) for board in boards])
+        state = _vectorize_boards(boards, self.device)
         logits = self.forward(state)  # (B, 65) -> (B, O)
         action_probs = F.softmax(logits, dim=-1)
 
@@ -110,8 +112,7 @@ class Chessformer(nn.Module):
             legal_idx = [self.move2idx[move] for move in legal_moves]
             legal_target[idx, legal_idx] = 1.0 / len(legal_moves)
             action_probs_i = F.softmax(action_probs[idx, legal_idx], dim=-1)
-            action_dist = torch.distributions.Categorical(action_probs_i)
-            action = action_dist.sample()
+            action = torch.multinomial(action_probs_i, num_samples=1)
             board.push_uci(legal_moves[action.item()])  # type: ignore
             chosen_probs[idx] = action_probs_i[action]
 
@@ -203,7 +204,8 @@ class Chessformer(nn.Module):
                     break
 
             # Accumulate the losses and backpropagate
-            batch_loss: torch.Tensor = 0  # type: ignore
+            batch_loss = torch.tensor(0.0, device=self.device)
+            policy_loss = torch.tensor(0.0, device=self.device)
             for board, game_losses, game_actions in zip(boards, all_losses, all_probs):
                 batch_loss += sum(game_losses) / len(game_losses)
                 if board.is_checkmate():
@@ -211,9 +213,10 @@ class Chessformer(nn.Module):
                         reward = checkmate_reward
                     else:
                         reward = -checkmate_reward
-                    batch_loss += _get_total_policy_loss(
+                    policy_loss += _get_total_policy_loss(
                         game_actions, reward, reward_discount
                     )
+            batch_loss += policy_loss
             batch_loss /= batch_size
 
             optimizer.zero_grad()
@@ -236,6 +239,7 @@ class Chessformer(nn.Module):
                 f"[ Games {game_n}-{game_n + batch_size}/{n_games}\t100.0% ] "
                 f"Finished: {100 * finished_games / batch_size:5.1f}% / "
                 f"Loss: {batch_loss.item():.4f} / "
+                f"PLoss: {policy_loss.item() / batch_size:.4f} / "
                 f"LR: {learning_rate:.2e} / "
                 f"{(tend - tstart) / batch_size:.2f}s/game / "
                 f"ETA: {((n_games - game_n) / batch_size) * (tend - tstart):.2f}s"
@@ -252,15 +256,16 @@ def _load_moves() -> list[str]:
         return f.read().splitlines()
 
 
-def _vectorize_board(board: chess.Board, device: torch.device) -> torch.Tensor:
+def _vectorize_boards(boards: list[chess.Board], device: torch.device) -> torch.Tensor:
     """Vectorize a chess board state for input to the model."""
-
     # 1 + 64 for the player and the board state
-    board_state = torch.zeros(65, dtype=torch.long, device=device)
-    for square, piece in board.piece_map().items():
-        board_state[square] = _PIECE2IDX[piece.symbol()]
-    board_state[-1] = board.turn
-    return board_state
+    board_state = torch.zeros(len(boards), 65, dtype=torch.long)
+    for idx, board in enumerate(boards):
+        board_map = board.piece_map()
+        for square, piece in board_map.items():
+            board_state[idx, square] = _PIECE2IDX[piece.symbol()]
+    board_state[:, -1] = board.turn
+    return board_state.to(device)
 
 
 def _get_total_policy_loss(

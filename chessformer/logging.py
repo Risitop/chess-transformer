@@ -36,7 +36,7 @@ from pathlib import Path
 
 import pygit2
 
-LOG_DIR = Path(__file__).parent.parent.parent / ".logs"
+LOG_DIR = Path(__file__).parent.parent / ".logs"
 _FORBIDDEN_FILE_CHARS = '{}[]()/<>:"/\\|?*. '
 _LOGGER = None
 _LOG_FILE = None
