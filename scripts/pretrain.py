@@ -5,21 +5,21 @@ from chessformer.model import Chessformer
 SUFFIX = 2
 
 MODEL_KWARGS = dict(
-    n_hidden=10,
-    dim_hidden=64,
+    n_hidden=5,
+    dim_hidden=768,
     n_layers=24,
-    n_heads=8,
-    dropout_rate=0.2,
+    n_heads=12,
+    dropout_rate=0.1,
 )
 TRAIN_KWARGS = dict(
     mode="pretrain",
     n_games=20000,
     moves_per_game=192,
-    batch_size=64,
-    learning_rate=1e-4,
+    batch_size=256,
+    learning_rate=1e-3,
     learning_rate_decay=1.0,
     learning_rate_min=1e-6,
-    weight_decay=1e-4,
+    weight_decay=1e-2,
     gradient_clip=1.0,
     checkmate_reward=0.0,
 )
