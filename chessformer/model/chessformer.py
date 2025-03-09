@@ -144,6 +144,7 @@ class Chessformer(nn.Module):
         gradient_clip: float = 1.0,
         checkmate_reward: float = 100.0,
         reward_discount: float = 0.99,
+        warmup_games: int = 50,
     ) -> "Chessformer":
         """Train the model using self-play.
 
@@ -171,6 +172,9 @@ class Chessformer(nn.Module):
             Reward for a checkmate.
         reward_discount : float, optional
             Discount factor for rewards that are used to calculate the policy loss.
+        warmup_games : int, optional
+            Number of games with only legal moves checking and more frequent
+            backpropagation.
         """
         if not _GAMES_PTH.exists():
             _GAMES_PTH.mkdir()
@@ -195,9 +199,17 @@ class Chessformer(nn.Module):
                 active_idx = [idx for idx, active in enumerate(is_active) if active]
                 active_boards = [boards[idx] for idx in active_idx]
                 with torch.amp.autocast(  # type: ignore
-                    device_type=self.device.type, enabled=self.device.type == "cuda"
+                    device_type=self.device.type,
+                    enabled=self.device.type == "cuda",
                 ):
                     loss, actions = self.step(active_boards)
+
+                if game_n < warmup_games:
+                    optimizer.zero_grad()
+                    loss.backward()
+                    nn.utils.clip_grad_norm_(self.parameters(), gradient_clip)
+                    optimizer.step()
+
                 for idx, board, action in zip(active_idx, active_boards, actions):
                     all_losses[idx].append(loss)
                     all_probs[idx].append(StateAction(action, board.turn))
@@ -230,10 +242,11 @@ class Chessformer(nn.Module):
             batch_loss = legal_loss + policy_loss
             batch_loss /= batch_size
 
-            optimizer.zero_grad()
-            batch_loss.backward()
-            nn.utils.clip_grad_norm_(self.parameters(), gradient_clip)
-            optimizer.step()
+            if game_n >= warmup_games:
+                optimizer.zero_grad()
+                batch_loss.backward()
+                nn.utils.clip_grad_norm_(self.parameters(), gradient_clip)
+                optimizer.step()
 
             # Learning rate decay
             learning_rate = max(learning_rate * learning_rate_decay, learning_rate_min)
