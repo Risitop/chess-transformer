@@ -6,16 +6,16 @@ SUFFIX = 2
 
 MODEL_KWARGS = dict(
     n_hidden=10,
-    dim_hidden=256,
-    n_layers=12,
-    n_heads=4,
+    dim_hidden=512,
+    n_layers=24,
+    n_heads=8,
     dropout_rate=0.2,
 )
 TRAIN_KWARGS = dict(
     mode="pretrain",
     n_games=20000,
     moves_per_game=192,
-    batch_size=200,
+    batch_size=256,
     learning_rate=1e-4,
     learning_rate_decay=0.999,
     learning_rate_min=1e-6,
