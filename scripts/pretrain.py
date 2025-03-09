@@ -22,6 +22,7 @@ TRAIN_KWARGS = dict(
     weight_decay=1e-2,
     gradient_clip=1.0,
     checkmate_reward=0.0,
+    repeat_penalty=0.01,
 )
 
 if __name__ == "__main__":
