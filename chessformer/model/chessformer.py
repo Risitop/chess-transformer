@@ -103,20 +103,32 @@ class Chessformer(nn.Module):
         action_probs = F.softmax(logits, dim=-1)
 
         # Calculate move legality loss
-        legal_target = torch.zeros(
-            (batch_size, len(self.all_moves)), device=self.device
+        n_moves = len(self.all_moves)
+        illegal_target = torch.ones(
+            (batch_size, n_moves), device=self.device, dtype=torch.bool
         )
         chosen_probs = torch.zeros(batch_size, device=self.device)
         for idx, board in enumerate(boards):
             legal_moves = [move.uci() for move in board.legal_moves]
+            if len(legal_moves) == 0:
+                raise ValueError("No legal moves available.")
             legal_idx = [self.move2idx[move] for move in legal_moves]
-            legal_target[idx, legal_idx] = 1.0 / len(legal_moves)
-            action_probs_i = F.softmax(action_probs[idx, legal_idx], dim=-1)
-            action = torch.multinomial(action_probs_i, num_samples=1)
-            board.push_uci(legal_moves[action.item()])  # type: ignore
-            chosen_probs[idx] = action_probs_i[action]
+            illegal_target[idx, legal_idx] = False
+            if len(legal_moves) == 1:
+                chosen_probs[idx] = action_probs[idx, legal_idx[0]]
+                chosen_move = legal_moves[0]
+            else:
+                action_probs_i = F.softmax(
+                    # Avoids numerical instability
+                    torch.clamp(action_probs[idx, legal_idx], 1e-6, 1.0),
+                    dim=-1,
+                )
+                action = torch.multinomial(action_probs_i, num_samples=1)
+                chosen_probs[idx] = action_probs[idx, legal_idx[action]]
+                chosen_move = legal_moves[action.item()]  # type: ignore
+            board.push_uci(chosen_move)
 
-        loss = F.cross_entropy(action_probs, legal_target)
+        loss = (action_probs * illegal_target).sum(dim=1).mean()
 
         return loss, chosen_probs
 
@@ -130,7 +142,6 @@ class Chessformer(nn.Module):
         learning_rate_min: float = 1e-6,
         weight_decay: float = 1e-4,
         gradient_clip: float = 1.0,
-        log_every_n: int = 100,
         checkmate_reward: float = 100.0,
         reward_discount: float = 0.99,
     ) -> "Chessformer":
@@ -163,7 +174,7 @@ class Chessformer(nn.Module):
         """
         if not _GAMES_PTH.exists():
             _GAMES_PTH.mkdir()
-        optimizer = torch.optim.Adam(
+        optimizer = torch.optim.AdamW(
             self.parameters(), lr=learning_rate, weight_decay=weight_decay
         )
 
@@ -204,10 +215,10 @@ class Chessformer(nn.Module):
                     break
 
             # Accumulate the losses and backpropagate
-            batch_loss = torch.tensor(0.0, device=self.device)
+            legal_loss = torch.tensor(0.0, device=self.device)
             policy_loss = torch.tensor(0.0, device=self.device)
             for board, game_losses, game_actions in zip(boards, all_losses, all_probs):
-                batch_loss += sum(game_losses) / len(game_losses)
+                legal_loss += sum(game_losses) / len(game_losses)
                 if board.is_checkmate():
                     if board.result() == "1-0":
                         reward = checkmate_reward
@@ -216,7 +227,7 @@ class Chessformer(nn.Module):
                     policy_loss += _get_total_policy_loss(
                         game_actions, reward, reward_discount
                     )
-            batch_loss += policy_loss
+            batch_loss = legal_loss + policy_loss
             batch_loss /= batch_size
 
             optimizer.zero_grad()
@@ -238,8 +249,9 @@ class Chessformer(nn.Module):
             message = (
                 f"[ Games {game_n}-{game_n + batch_size}/{n_games}\t100.0% ] "
                 f"Finished: {100 * finished_games / batch_size:5.1f}% / "
-                f"Loss: {batch_loss.item():.4f} / "
-                f"PLoss: {policy_loss.item() / batch_size:.4f} / "
+                f"Loss: {batch_loss.item():.3f} / "
+                f"LLoss: {legal_loss.item() / batch_size:.3f} / "
+                f"PLoss: {policy_loss.item() / batch_size:.3f} / "
                 f"LR: {learning_rate:.2e} / "
                 f"{(tend - tstart) / batch_size:.2f}s/game / "
                 f"ETA: {((n_games - game_n) / batch_size) * (tend - tstart):.2f}s"
@@ -278,11 +290,11 @@ def _get_total_policy_loss(
     reward : float
         The reward for the game, if >0 then white won, if <0 then black won.
     """
-    policy_loss = 0
+    policy_loss = torch.tensor(0.0, device=history[0].action_prob.device)
     for state_action in history:
         policy_loss += _action_loss(state_action, reward)
         reward *= reward_discount
-    return policy_loss / len(history)  # type: ignore
+    return policy_loss
 
 
 def _action_loss(state_action: StateAction, reward: float) -> torch.Tensor:
