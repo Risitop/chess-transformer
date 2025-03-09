@@ -203,76 +203,66 @@ class Chessformer(nn.Module):
 
         logging.info(f"Training Chessformer for {n_games} games. Mode: `{mode}`")
 
+        max_moves_total = batch_size * moves_per_game
         for game_n in range(0, n_games, batch_size):
             tstart = time.time()
 
             batch_size = min(batch_size, n_games - game_n)
             boards = [chess.Board() for _ in range(batch_size)]
             is_active = [True] * batch_size
-            all_losses = [[] for _ in range(batch_size)]
-            all_probs = [[] for _ in range(batch_size)]
             move_counts = [np.zeros(len(self.all_moves))] * batch_size
+            legal_loss = 0.0
+            repeat_loss = 0.0
             finished_games = 0
+            moves_left = max_moves_total
 
             # Play the games in parallel until all are over
-            for _ in range(moves_per_game):
+            for move_k in range(moves_per_game):
                 active_idx = [idx for idx, active in enumerate(is_active) if active]
                 active_boards = [boards[idx] for idx in active_idx]
                 with torch.amp.autocast(  # type: ignore
                     device_type=self.device.type,
                     enabled=self.device.type == "cuda",
                 ):
-                    lossl, lossr, actions = self.step(active_boards, move_counts)
+                    lossl, lossr, _ = self.step(active_boards, move_counts)
                     loss = lossl + repeat_penalty * lossr
+                    legal_loss += lossl
+                    repeat_loss += lossr
 
                 if mode == "pretrain":
                     optimizer.zero_grad()
                     loss.backward()
                     nn.utils.clip_grad_norm_(self.parameters(), gradient_clip)
                     optimizer.step()
+                else:
+                    raise NotImplementedError
 
-                for idx, board, action in zip(active_idx, active_boards, actions):
-                    all_losses[idx].append(loss)
-                    all_probs[idx].append(StateAction(action, board.turn))
+                for idx, board in zip(active_idx, active_boards):
                     if board.is_game_over():
                         finished_games += 1
                         is_active[idx] = False
-                        pct_finished = 100 * (1 - sum(is_active) / batch_size)
-                        print(
-                            f"[ Games {game_n}-{game_n + batch_size}/{n_games}\t"
-                            f"{pct_finished:5.1f}% ]",
-                            end="\r",
-                        )
+                        moves_left -= moves_per_game - move_k
+                    else:
+                        moves_left -= 1
+
+                pct_finished = 100 * (1 - moves_left / max_moves_total)
+                print(
+                    f"[ Games {game_n}-{game_n + batch_size}/{n_games}\t"
+                    f"{pct_finished:5.1f}% ]",
+                    end="\r",
+                )
 
                 if not any(is_active):
                     break
-
-            # Accumulate the losses and backpropagate
-            legal_loss = torch.tensor(0.0, device=self.device)
-            policy_loss = torch.tensor(0.0, device=self.device)
-            for board, game_losses, game_actions in zip(boards, all_losses, all_probs):
-                legal_loss += sum(game_losses) / len(game_losses)
-                if board.is_checkmate():
-                    if board.result() == "1-0":
-                        reward = checkmate_reward
-                    else:
-                        reward = -checkmate_reward
-                    policy_loss += _get_total_policy_loss(
-                        game_actions, reward, reward_discount
-                    )
-            batch_loss = legal_loss + policy_loss
-            batch_loss /= batch_size
-
-            if mode == "policy":
-                optimizer.zero_grad()
-                batch_loss.backward()
-                nn.utils.clip_grad_norm_(self.parameters(), gradient_clip)
-                optimizer.step()
 
             # Learning rate decay
             learning_rate = max(learning_rate * learning_rate_decay, learning_rate_min)
             for param_group in optimizer.param_groups:
                 param_group["lr"] = learning_rate
+
+            legal_loss /= batch_size
+            repeat_loss /= batch_size
+            total_loss = legal_loss + repeat_loss
 
             # Monitoring
             with open(self.games_path, "a") as f:
@@ -283,9 +273,9 @@ class Chessformer(nn.Module):
             message = (
                 f"[ Games {game_n}-{game_n + batch_size}/{n_games}\t100.0% ] "
                 f"Finished: {100 * finished_games / batch_size:5.1f}% / "
-                f"Loss: {batch_loss.item():.3f} / "
-                f"LLoss: {legal_loss.item() / batch_size:.3f} / "
-                f"PLoss: {policy_loss.item() / batch_size:.3f} / "
+                f"Loss (total): {total_loss.item():.3f} / "  # type: ignore
+                f"Loss (legal): {legal_loss.item():.3f} / "  # type: ignore
+                f"Loss (repeat): {repeat_loss.item():.3f} / "  # type: ignore
                 f"LR: {learning_rate:.2e} / "
                 f"{(tend - tstart) / batch_size:.2f}s/game / "
                 f"ETA: {((n_games - game_n) / batch_size) * (tend - tstart):.2f}s"
