@@ -19,10 +19,10 @@ MODEL_KWARGS = dict(
 )
 
 mode = "pretrain"
-n_positions = 100_0000
+n_positions = 1_000_000
 batch_size = 4
 learning_rate = 1e-4
-learning_rate_decay = 1.0
+learning_rate_decay = 0.99
 learning_rate_min = 1e-6
 weight_decay = 1e-2
 gradient_clip = 1.0
