@@ -106,7 +106,7 @@ class ChessDataloader:
 def _generate_random_board() -> chess.Board:
     """Generate a random chess board."""
     board = chess.Board()
-    n_moves = np.clip(np.random.negative_binomial(1, 0.02), 0, _MAX_MOVES)
+    n_moves = np.random.randint(1, _MAX_MOVES)
     for _ in range(n_moves):
         legal_moves = list(board.legal_moves)
         if not legal_moves:

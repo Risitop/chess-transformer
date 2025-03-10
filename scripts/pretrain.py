@@ -21,9 +21,9 @@ MODEL_KWARGS = dict(
 
 mode = "pretrain"
 n_positions = 1_000_000
-batch_size = 1
-learning_rate = 1e-4
-learning_rate_decay = 0.99
+batch_size = 256
+learning_rate = 1e-3
+learning_rate_decay = 0.98
 learning_rate_min = 1e-6
 weight_decay = 1e-2
 gradient_clip = 1.0
@@ -50,6 +50,7 @@ if __name__ == "__main__":
 
     losses_mem = []
     illegal_prob_mem = []
+    checkmate_f1_mem = []
     decay_in = decay_every
     print_in = print_every
     checkpoint_in = checkpoint_every
@@ -63,7 +64,7 @@ if __name__ == "__main__":
             device_type=model.device.type,
             enabled=model.device.type == "cuda",
         ):
-            loss, probl = model.step(states)
+            loss, metrics = model.step(states)
 
         optimizer.zero_grad()
         loss.backward()
@@ -90,9 +91,11 @@ if __name__ == "__main__":
 
         # Monitoring
         losses_mem.append(loss.item())
-        illegal_prob_mem.append(probl.item())
+        illegal_prob_mem.append(metrics.illegal_prob)
+        checkmate_f1_mem.append(metrics.checkmate_f1)
         losses_mem = losses_mem[-100:]
         illegal_prob_mem = illegal_prob_mem[-100:]
+        checkmate_f1_mem = checkmate_f1_mem[-100:]
 
         print_in -= batch_size
         if print_in <= 0:
@@ -104,6 +107,7 @@ if __name__ == "__main__":
                 f"[ Positions {position_k}-{position_k + batch_size}/{n_positions} / {pct:5.1f}% ] "
                 f"Loss: {np.mean(losses_mem):.3f} / "  # type: ignore
                 f"P(illegal): {np.mean(illegal_prob_mem):.3f} / "  # type: ignore
+                f"Checkmate F1: {np.mean(checkmate_f1_mem):.3f} / "  # type: ignore
                 f"LR: {learning_rate:.2e} / "
                 f"{pos_per_s:.2f} positions/s / "
                 f"ETA: {(n_positions - position_k) / pos_per_s / 60:.2f} min"
