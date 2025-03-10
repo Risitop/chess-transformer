@@ -30,12 +30,20 @@ gradient_clip = 1.0
 decay_every = 5_000
 print_every = 100
 checkpoint_every = 100_000
+compile_model = True
+beta1, beta2 = 0.9, 0.95
 
 if __name__ == "__main__":
     model = Chessformer(**MODEL_KWARGS)  # type: ignore
 
     if torch.cuda.is_available():
+        logging.info("Sending model to CUDA.")
         model.to("cuda")
+
+    if compile_model:
+        logging.info("Compiling model...")
+        model = torch.compile(model)
+
     if not _GAMES_PTH.exists():
         _GAMES_PTH.mkdir()
     if not _CKPT_PTH.exists():
@@ -43,7 +51,10 @@ if __name__ == "__main__":
 
     # Train the model
     optimizer = torch.optim.AdamW(
-        model.parameters(), lr=learning_rate, weight_decay=weight_decay
+        model.parameters(),
+        lr=learning_rate,
+        weight_decay=weight_decay,
+        betas=(beta1, beta2),
     )
 
     logging.info(f"Pre-training Chessformer for {n_positions} positions.")
