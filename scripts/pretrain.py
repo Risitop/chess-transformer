@@ -9,6 +9,7 @@ from chessformer import logging
 from chessformer.model import Chessformer
 
 _GAMES_PTH = Path(__file__).parent.parent.parent / "out"
+_CKPT_PTH = Path(__file__).parent.parent.parent / "checkpoints"
 
 MODEL_KWARGS = dict(
     n_hidden=4,
@@ -28,6 +29,7 @@ weight_decay = 1e-2
 gradient_clip = 1.0
 decay_every = 5_000
 print_every = 100
+checkpoint_every = 100_000
 
 if __name__ == "__main__":
     model = Chessformer(**MODEL_KWARGS)  # type: ignore
@@ -36,6 +38,8 @@ if __name__ == "__main__":
         model.to("cuda")
     if not _GAMES_PTH.exists():
         _GAMES_PTH.mkdir()
+    if not _CKPT_PTH.exists():
+        _CKPT_PTH.mkdir()
 
     # Train the model
     optimizer = torch.optim.AdamW(
@@ -48,6 +52,8 @@ if __name__ == "__main__":
     illegal_prob_mem = []
     decay_in = decay_every
     print_in = print_every
+    checkpoint_in = checkpoint_every
+    checkpoint_n = 0
     tstart = time.time()
     for position_k in range(0, n_positions, batch_size):
         batch_size = min(batch_size, n_positions - position_k)
@@ -72,6 +78,16 @@ if __name__ == "__main__":
                 param_group["lr"] = learning_rate
             decay_in = decay_every
 
+        # Checkpoint
+        checkpoint_in -= batch_size
+        if checkpoint_in <= 0:
+            checkpoint_in = checkpoint_every
+            checkpoint_n += 1
+            torch.save(
+                model.state_dict(),
+                _CKPT_PTH / f"chessformer_pretrain_{checkpoint_n}.ckpt",
+            )
+
         # Monitoring
         losses_mem.append(loss.item())
         illegal_prob_mem.append(probl.item())
@@ -95,4 +111,4 @@ if __name__ == "__main__":
             print(message, end=" " * 20 + "\r")
             logging.debug(message)
 
-    torch.save(model.state_dict(), "chessformer_pretrain.pth")
+    torch.save(model.state_dict(), "chessformer_pretrain_final.ckpt")
