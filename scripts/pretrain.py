@@ -16,16 +16,16 @@ MODEL_KWARGS = dict(
     dim_hidden=768,
     n_layers=24,
     n_heads=12,
-    dropout_rate=0.1,
+    dropout_rate=0.0,
 )
 
 mode = "pretrain"
 n_positions = 1_000_000
-batch_size = 256
-learning_rate = 1e-3
-learning_rate_decay = 0.98
-learning_rate_min = 1e-6
-weight_decay = 1e-2
+batch_size = 512
+learning_rate = 6e-4
+learning_rate_decay = 0.99
+learning_rate_min = 6e-5
+weight_decay = 1e-1
 gradient_clip = 1.0
 decay_every = 5_000
 print_every = 100

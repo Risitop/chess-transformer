@@ -66,6 +66,7 @@ class Chessformer(nn.Module):
         self.emb_castle_w = nn.Embedding(2, dim_hidden)
         self.emb_turn = nn.Embedding(2, dim_hidden)
         self.cls_token = nn.Parameter(torch.randn(dim_hidden))
+        self.prv_move = nn.Parameter(torch.randn(dim_hidden))
 
         # Transformer architecture
         self.mha = nn.TransformerEncoder(
@@ -75,6 +76,7 @@ class Chessformer(nn.Module):
                 dim_feedforward=dim_hidden,
                 dropout=dropout_rate,
                 batch_first=True,
+                bias=False,
             ),
             num_layers=n_layers,
         )
@@ -85,6 +87,7 @@ class Chessformer(nn.Module):
             dim_hidden,
             dropout_rate,
         )
+        self.apply(self._init_weights)
 
         nparams = sum(p.numel() for p in self.parameters() if p.requires_grad)
         logging.info(f"Chessformer initialized with {nparams} trainable parameters.")
@@ -108,7 +111,7 @@ class Chessformer(nn.Module):
         trn_emb = self.emb_turn(metadata[:, dl.MT_IDX_TURN]).unsqueeze(1)
         mvs_emb = torch.stack(
             [
-                self.emb_pos(metadata[:, idx])
+                self.emb_pos(metadata[:, idx]) + self.prv_move
                 for idx in range(dl.MT_IDX_MOVE, len(metadata[0]))
             ],
             dim=1,
@@ -163,3 +166,12 @@ class Chessformer(nn.Module):
             loss_legal,
             TrainingMetrics(illegal_prob=prob_illegal.item()),
         )
+
+    def _init_weights(self, module: nn.Module) -> None:
+        """Initialize the weights of the model."""
+        if isinstance(module, nn.Linear):
+            torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
+            if module.bias is not None:
+                torch.nn.init.zeros_(module.bias)
+        elif isinstance(module, nn.Embedding):
+            torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
