@@ -1,6 +1,5 @@
 import dataclasses
 
-from sklearn.metrics import f1_score
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -23,7 +22,6 @@ class TrainingMetrics:
     """Dataclass for storing the training metrics of a chessformer model."""
 
     illegal_prob: float
-    checkmate_f1: float
 
 
 class Chessformer(nn.Module):
@@ -87,13 +85,6 @@ class Chessformer(nn.Module):
             dim_hidden,
             dropout_rate,
         )
-        self.checkmate_decoder = MLP(
-            dim_hidden,
-            1,
-            n_hidden,
-            dim_hidden,
-            dropout_rate,
-        )
 
         nparams = sum(p.numel() for p in self.parameters() if p.requires_grad)
         logging.info(f"Chessformer initialized with {nparams} trainable parameters.")
@@ -102,16 +93,8 @@ class Chessformer(nn.Module):
         self.device = torch.device(device)
         return super().to(device)
 
-    def forward(
-        self, state: torch.Tensor, metadata: torch.Tensor
-    ) -> tuple[torch.Tensor, torch.Tensor]:
-        """Forward pass of the model, state (B, T, 2) and metadata (B, M).
-
-        Returns
-        -------
-        tuple[torch.Tensor, torch.Tensor]
-            The move logits and checkmate probability.
-        """
+    def forward(self, state: torch.Tensor, metadata: torch.Tensor) -> torch.Tensor:
+        """Forward pass of the model, state (B, T, 2) and metadata (B, M)."""
         B, T, _ = state.shape
         state = state.to(self.device)
         metadata = metadata.to(self.device)
@@ -150,14 +133,13 @@ class Chessformer(nn.Module):
         # Transformer
         trans_emb = self.mha(full_emb, src_key_padding_mask=mask)  # (B, T, C)
         moves_logits = self.move_decoder(trans_emb[:, 0])
-        checkmate_prob = F.sigmoid(self.checkmate_decoder(trans_emb[:, 0]))
-        return moves_logits, checkmate_prob.squeeze()
+        return moves_logits
 
     def step(self, states: list[dl.ChessState]) -> tuple[torch.Tensor, TrainingMetrics]:
         """Take a step in the games, return the legal loss and monitoring metrics."""
         batch_size = len(states)
         state, metadata = self.dataloader.collate_inputs(states)
-        move_logits, checkmate_prob = self.forward(state, metadata)
+        move_logits = self.forward(state, metadata)
         if len(move_logits.shape) == 1:
             move_logits = move_logits.unsqueeze(0)
         action_probs = F.softmax(move_logits, dim=-1)
@@ -177,21 +159,7 @@ class Chessformer(nn.Module):
         prob_illegal = (action_probs * (illegal_target == 0)).sum(dim=1).mean()
         loss_legal = F.cross_entropy(action_probs, illegal_target)
 
-        target_checkmate = torch.tensor(
-            [state.is_checkmate for state in states],
-            device=self.device,
-            dtype=torch.float32,
-        )
-        loss_checkmate = F.mse_loss(checkmate_prob, target_checkmate)
-        checkmate_f1 = f1_score(
-            target_checkmate.detach().cpu().numpy(),
-            checkmate_prob.detach().round().cpu().numpy(),
-        )
-
         return (
-            loss_legal + loss_checkmate,
-            TrainingMetrics(
-                illegal_prob=prob_illegal.item(),
-                checkmate_f1=checkmate_f1,  # type: ignore
-            ),
+            loss_legal,
+            TrainingMetrics(illegal_prob=prob_illegal.item()),
         )

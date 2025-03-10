@@ -50,7 +50,6 @@ if __name__ == "__main__":
 
     losses_mem = []
     illegal_prob_mem = []
-    checkmate_f1_mem = []
     decay_in = decay_every
     print_in = print_every
     checkpoint_in = checkpoint_every
@@ -92,10 +91,8 @@ if __name__ == "__main__":
         # Monitoring
         losses_mem.append(loss.item())
         illegal_prob_mem.append(metrics.illegal_prob)
-        checkmate_f1_mem.append(metrics.checkmate_f1)
         losses_mem = losses_mem[-100:]
         illegal_prob_mem = illegal_prob_mem[-100:]
-        checkmate_f1_mem = checkmate_f1_mem[-100:]
 
         print_in -= batch_size
         if print_in <= 0:
@@ -107,7 +104,6 @@ if __name__ == "__main__":
                 f"[ Positions {position_k}-{position_k + batch_size}/{n_positions} / {pct:5.1f}% ] "
                 f"Loss: {np.mean(losses_mem):.3f} / "  # type: ignore
                 f"P(illegal): {np.mean(illegal_prob_mem):.3f} / "  # type: ignore
-                f"Checkmate F1: {np.mean(checkmate_f1_mem):.3f} / "  # type: ignore
                 f"LR: {learning_rate:.2e} / "
                 f"{pos_per_s:.2f} positions/s / "
                 f"ETA: {(n_positions - position_k) / pos_per_s / 60:.2f} min"
