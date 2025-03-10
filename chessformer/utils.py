@@ -1,3 +1,4 @@
+import math
 from pathlib import Path
 
 import chess
@@ -23,3 +24,17 @@ def board_to_pgn(board: chess.Board):
     if pgn_string.endswith("*"):
         pgn_string = pgn_string[:-1]
     return pgn_string
+
+
+def cosine_lr_with_warmup(
+    lr: float, iteration: int, warmup: int, decay_until: int, min_lr: float
+) -> float:
+    """Cosine learning rate schedule with warmup and decay."""
+    if iteration < warmup:
+        return lr * (iteration + 1) / (warmup + 1)
+    if iteration > decay_until:
+        return min_lr
+    decay_ratio = (iteration - warmup) / (decay_until - warmup)
+    assert 0 <= decay_ratio <= 1
+    coeff = 0.5 * (1.0 + math.cos(math.pi * decay_ratio))  # coeff ranges 0..1
+    return min_lr + coeff * (lr - min_lr)
