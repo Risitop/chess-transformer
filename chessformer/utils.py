@@ -1,5 +1,15 @@
+from pathlib import Path
+
 import chess
 import chess.pgn
+
+_MOVES_PTH = Path(__file__).parent.parent / "assets" / "all_moves.txt"
+
+
+def load_moves() -> list[str]:
+    """Load all possible chess moves from file."""
+    with open(_MOVES_PTH, "r") as f:
+        return f.read().splitlines()
 
 
 def board_to_pgn(board: chess.Board):
