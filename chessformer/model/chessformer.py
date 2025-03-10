@@ -5,7 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from chessformer import logging, utils
-from chessformer.dataloader import ChessDataloader, ChessState
+from chessformer import dataloader as dl
 from chessformer.model.mlp import MLP
 
 
@@ -49,7 +49,7 @@ class Chessformer(nn.Module):
         self.all_moves = utils.load_moves()
         self.move2idx = {move: idx for idx, move in enumerate(self.all_moves)}
         self.idx2move = {idx: move for idx, move in enumerate(self.all_moves)}
-        self.dataloader = ChessDataloader()
+        self.dataloader = dl.ChessDataloader()
         self.device = torch.device("cpu")
 
         # Model state embeddings
@@ -93,14 +93,17 @@ class Chessformer(nn.Module):
         metadata = metadata.to(self.device)
 
         # Base embeddings
-        state_emb = self.emb_piece(state[:, :, 0])  # (B, T, C)
-        pos_emb = self.emb_pos(state[:, :, 1])
+        state_emb = self.emb_piece(state[:, :, dl.ST_IDX_PIECE])  # (B, T, C)
+        pos_emb = self.emb_pos(state[:, :, dl.ST_IDX_SQUARE])
         base_emb = state_emb + pos_emb
-        cb_emb = self.emb_castle_b(metadata[:, 0]).unsqueeze(1)
-        cw_emb = self.emb_castle_w(metadata[:, 1]).unsqueeze(1)
-        trn_emb = self.emb_turn(metadata[:, 2]).unsqueeze(1)
+        cb_emb = self.emb_castle_b(metadata[:, dl.MT_IDX_CASTLE_B]).unsqueeze(1)
+        cw_emb = self.emb_castle_w(metadata[:, dl.MT_IDX_CASTLE_W]).unsqueeze(1)
+        trn_emb = self.emb_turn(metadata[:, dl.MT_IDX_TURN]).unsqueeze(1)
         mvs_emb = torch.stack(
-            [self.emb_pos(metadata[:, idx]) for idx in range(3, len(metadata[0]))],
+            [
+                self.emb_pos(metadata[:, idx])
+                for idx in range(dl.MT_IDX_MOVE, len(metadata[0]))
+            ],
             dim=1,
         )
         cls_emb = self.cls_token.repeat(B, 1).unsqueeze(1)
@@ -124,7 +127,7 @@ class Chessformer(nn.Module):
         trans_emb = self.mha(full_emb, src_key_padding_mask=mask)  # (B, T, C)
         return self.decoder(trans_emb[:, 0])  # Decode the output
 
-    def step(self, states: list[ChessState]) -> tuple[torch.Tensor, torch.Tensor]:
+    def step(self, states: list[dl.ChessState]) -> tuple[torch.Tensor, torch.Tensor]:
         """Take a step in the games, return the legal loss and illegal proba."""
         batch_size = len(states)
         state, metadata = self.dataloader.collate_inputs(states)

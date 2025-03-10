@@ -10,6 +10,14 @@ chess.Move
 _PIECE2IDX = {piece: index for index, piece in enumerate("PNBRQKpnbrqk")}
 _MAX_MOVES = 256
 
+# State encoding indices
+ST_IDX_PIECE = 0
+ST_IDX_SQUARE = 1
+MT_IDX_CASTLE_B = 0
+MT_IDX_CASTLE_W = 1
+MT_IDX_TURN = 2
+MT_IDX_MOVE = 3
+
 
 @dataclasses.dataclass
 class ChessState:
@@ -74,8 +82,8 @@ class ChessDataloader:
         batch_size = len(states)
         max_pieces = max(state.board_state.size(0) for state in states)
         board_state = torch.zeros(batch_size, max_pieces, 2, dtype=torch.long)
-        board_state[:, :, 0] = 12  # pad tokens
-        board_state[:, :, 1] = 64
+        board_state[:, :, ST_IDX_PIECE] = 12  # pad tokens
+        board_state[:, :, ST_IDX_SQUARE] = 64
         metadata = torch.full((batch_size, 8), 64, dtype=torch.long)
         for idx, state in enumerate(states):
             board_state[idx, : state.board_state.size(0)] = state.board_state
@@ -85,11 +93,11 @@ class ChessDataloader:
     def _vectorize_metadata(self, board: chess.Board) -> torch.Tensor:
         """Vectorize metadata about the chess board."""
         metadata = torch.full((8,), 64, dtype=torch.long)
-        metadata[0] = board.has_castling_rights(chess.BLACK)
-        metadata[1] = board.has_castling_rights(chess.WHITE)
-        metadata[2] = board.turn
+        metadata[MT_IDX_CASTLE_B] = board.has_castling_rights(chess.BLACK)
+        metadata[MT_IDX_CASTLE_W] = board.has_castling_rights(chess.WHITE)
+        metadata[MT_IDX_TURN] = board.turn
         for idx, move in enumerate(reversed(board.move_stack)):
-            metadata[3 + idx] = move.to_square
+            metadata[MT_IDX_MOVE + idx] = move.to_square
             if idx >= 4:
                 break
         return metadata
@@ -113,6 +121,6 @@ def _vectorize_board(board: chess.Board) -> torch.Tensor:
     board_map = board.piece_map()
     board_state = torch.zeros(len(board_map) + 4, 2, dtype=torch.long)
     for idx, (square, piece) in enumerate(board_map.items()):
-        board_state[idx, 0] = _PIECE2IDX[piece.symbol()]
-        board_state[idx, 1] = square
+        board_state[idx, ST_IDX_PIECE] = _PIECE2IDX[piece.symbol()]
+        board_state[idx, ST_IDX_SQUARE] = square
     return board_state
