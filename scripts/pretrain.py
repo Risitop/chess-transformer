@@ -30,10 +30,8 @@ gradient_clip = 1.0
 decay_every = 5_000
 print_every = 100
 checkpoint_every = 100_000
-compile_model = True
-beta1, beta2 = 0.9, 0.95
-
-torch.set_float32_matmul_precision("high")
+compile_model = False
+beta1, beta2 = 0.9, 0.999
 
 if __name__ == "__main__":
     model = Chessformer(**MODEL_KWARGS)  # type: ignore
@@ -73,6 +71,7 @@ if __name__ == "__main__":
         batch_size = min(batch_size, n_positions - position_k)
 
         states = model.dataloader.get_boards(batch_size)
+
         with torch.amp.autocast(  # type: ignore
             device_type=model.device.type,
             enabled=model.device.type == "cuda",
@@ -82,9 +81,9 @@ if __name__ == "__main__":
         loss.backward()
         nn.utils.clip_grad_norm_(model.parameters(), gradient_clip)
         optimizer.step()
-        optimizer.zero_grad()
+        optimizer.zero_grad(set_to_none=True)
 
-        decay_in -= 1
+        decay_in -= batch_size
         if decay_in <= 0:
             # Learning rate decay
             learning_rate = max(learning_rate * learning_rate_decay, learning_rate_min)

@@ -76,6 +76,7 @@ class Chessformer(nn.Module):
                 dim_feedforward=4 * dim_hidden,
                 dropout=dropout_rate,
                 batch_first=True,
+                norm_first=True,
                 bias=False,
             ),
             num_layers=n_layers,
@@ -117,6 +118,7 @@ class Chessformer(nn.Module):
             dim=1,
         )
         cls_emb = self.cls_token.repeat(B, 1).unsqueeze(1)
+
         full_emb = torch.cat(
             [cls_emb, base_emb, cb_emb, cw_emb, trn_emb, mvs_emb], dim=1
         )
@@ -135,7 +137,7 @@ class Chessformer(nn.Module):
 
         # Transformer
         trans_emb = self.mha(full_emb, src_key_padding_mask=mask)  # (B, T, C)
-        moves_logits = self.move_decoder(trans_emb[:, 0])
+        moves_logits = self.move_decoder(trans_emb[:, 0, :])
         return moves_logits
 
     def step(self, states: list[dl.ChessState]) -> tuple[torch.Tensor, TrainingMetrics]:
@@ -145,22 +147,23 @@ class Chessformer(nn.Module):
         move_logits = self.forward(state, metadata)
         if len(move_logits.shape) == 1:
             move_logits = move_logits.unsqueeze(0)
-        action_probs = F.softmax(move_logits, dim=-1)
 
         # Calculate move legality loss
-        n_moves = len(self.all_moves)
         illegal_target = torch.zeros(
-            (batch_size, n_moves), device=self.device, dtype=torch.float32
+            (batch_size, len(self.all_moves)),
+            device=self.device,
+            dtype=torch.float32,
         )
         for idx, state in enumerate(states):
             legal_moves = state.legal_moves
             if not legal_moves:
                 continue
             legal_idx = [self.move2idx[move] for move in legal_moves]
-            illegal_target[idx, legal_idx] = 1.0 / len(legal_moves)
+            illegal_target[idx, legal_idx] = 1 / len(legal_moves)
 
+        loss_legal = F.cross_entropy(move_logits, illegal_target, reduction="mean")
+        action_probs = F.softmax(move_logits, dim=-1)
         prob_illegal = (action_probs * (illegal_target == 0)).sum(dim=1).mean()
-        loss_legal = F.cross_entropy(action_probs, illegal_target)
 
         return (
             loss_legal,
