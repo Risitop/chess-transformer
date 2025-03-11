@@ -73,7 +73,7 @@ class Chessformer(nn.Module):
             nn.TransformerEncoderLayer(
                 dim_hidden,
                 n_heads,
-                dim_feedforward=dim_hidden,
+                dim_feedforward=4 * dim_hidden,
                 dropout=dropout_rate,
                 batch_first=True,
                 bias=False,
@@ -84,7 +84,7 @@ class Chessformer(nn.Module):
             dim_hidden,
             len(self.all_moves),
             n_hidden,
-            dim_hidden,
+            4 * dim_hidden,
             dropout_rate,
         )
         self.apply(self._init_weights)

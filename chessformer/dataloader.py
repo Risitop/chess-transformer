@@ -119,7 +119,7 @@ def _generate_random_board() -> chess.Board:
 def _vectorize_board(board: chess.Board) -> torch.Tensor:
     """Vectorize a chess board state for input to the model."""
     board_map = board.piece_map()
-    board_state = torch.zeros(len(board_map) + 4, 2, dtype=torch.long)
+    board_state = torch.zeros(len(board_map), 2, dtype=torch.long)
     for idx, (square, piece) in enumerate(board_map.items()):
         board_state[idx, ST_IDX_PIECE] = _PIECE2IDX[piece.symbol()]
         board_state[idx, ST_IDX_SQUARE] = square

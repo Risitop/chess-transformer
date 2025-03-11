@@ -12,9 +12,9 @@ _GAMES_PTH = Path(__file__).parent.parent / "out"
 _CKPT_PTH = Path(__file__).parent.parent / "checkpoints"
 
 MODEL_KWARGS = dict(
-    n_hidden=4,
+    n_hidden=1,
     dim_hidden=768,
-    n_layers=12,
+    n_layers=24,
     n_heads=12,
     dropout_rate=0.0,
 )
@@ -22,8 +22,7 @@ MODEL_KWARGS = dict(
 mode = "pretrain"
 n_positions = 1_000_000
 batch_size = 512
-accumulation_steps = 10
-learning_rate = 6e-4
+learning_rate = 1e-4
 learning_rate_decay = 0.99
 learning_rate_min = 6e-5
 weight_decay = 1e-1
@@ -33,6 +32,8 @@ print_every = 100
 checkpoint_every = 100_000
 compile_model = True
 beta1, beta2 = 0.9, 0.95
+
+torch.set_float32_matmul_precision("high")
 
 if __name__ == "__main__":
     model = Chessformer(**MODEL_KWARGS)  # type: ignore
@@ -67,7 +68,6 @@ if __name__ == "__main__":
     checkpoint_in = checkpoint_every
     checkpoint_n = 0
     step = 0
-    step_in = accumulation_steps
     tstart = time.time()
     for position_k in range(0, n_positions, batch_size):
         batch_size = min(batch_size, n_positions - position_k)
@@ -78,24 +78,19 @@ if __name__ == "__main__":
             enabled=model.device.type == "cuda",
         ):
             loss, metrics = model.step(states)
-            loss = loss / accumulation_steps
 
         loss.backward()
+        nn.utils.clip_grad_norm_(model.parameters(), gradient_clip)
+        optimizer.step()
+        optimizer.zero_grad()
 
-        step_in -= 1
-        if step_in <= 0:
-            step_in = accumulation_steps
-            nn.utils.clip_grad_norm_(model.parameters(), gradient_clip)
-            optimizer.step()
-            optimizer.zero_grad()
-
+        decay_in -= 1
+        if decay_in <= 0:
             # Learning rate decay
             learning_rate = max(learning_rate * learning_rate_decay, learning_rate_min)
             for param_group in optimizer.param_groups:
                 param_group["lr"] = learning_rate
             decay_in = decay_every
-
-            step += 1
 
         # Checkpoint
         checkpoint_in -= batch_size
