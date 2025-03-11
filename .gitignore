@@ -16,3 +16,4 @@ poetry.lock
 .archive
 out/
 .logs/
+checkpoints/
