@@ -2,13 +2,18 @@ import dataclasses
 import random
 
 import chess
+import multiprocessing as mp
 import numpy as np
 import torch
+import functools
 
-chess.Move
+from chessformer import logging
+from typing import Sequence
 
 _PIECE2IDX = {piece: index for index, piece in enumerate("PNBRQKpnbrqk")}
 _MAX_MOVES = 256
+_GEN_CHUNK_SIZE = 256
+_MIN_CHUNKS_GEN = 8
 
 # State encoding indices
 ST_IDX_PIECE = 0
@@ -50,8 +55,31 @@ class ChessState:
 
 
 class ChessDataloader:
-    def __init__(self):
-        pass
+    """A dataloader for chess data.
+
+    This dataloader generates random chess boards and vectorizes them for input to the
+    model. It also maintains a buffer of generated boards to reduce the overhead of
+    generating new boards.
+
+    Attributes
+    ----------
+    buffer_target_size : int
+        The target size of the buffer. The dataloader will generate new boards in the
+        background until the buffer reaches this size.
+
+    n_jobs : int
+        The number of worker processes to use for generating boards in the background.
+        If set to -1, the number of worker processes will be set to the number of CPU
+        cores.
+    """
+
+    def __init__(self, buffer_target_size: int = 2_000, n_jobs: int = 16):
+        self._board_buffer = []
+        self._buffer_target_size = buffer_target_size
+        if n_jobs == -1:
+            n_jobs = mp.cpu_count()
+        self._generation_pool = mp.Pool(n_jobs)
+        self._virtual_samples = 0
 
     def get_boards(self, batch_size: int) -> list[ChessState]:
         """Get a batch of chess states.
@@ -61,18 +89,15 @@ class ChessDataloader:
         batch_size : int
             The number of chess states to return.
         """
-        states = []
-        for _ in range(batch_size):
-            board = _generate_random_board()
-            vboard, leg_moves = _vectorize_board(board)
-            states.append(
-                ChessState(
-                    board_state=vboard,
-                    board_metadata=self._vectorize_metadata(board),
-                    legal_moves=leg_moves,
-                    is_checkmate=board.is_checkmate(),
-                )
-            )
+        n_from_buffer = min(len(self._board_buffer), batch_size)
+        states = self._board_buffer[:n_from_buffer]
+        self._board_buffer = self._board_buffer[n_from_buffer:]
+        if len(states) < batch_size:
+            states.extend(generate_boards(batch_size - len(states)))
+        if len(self._board_buffer) + self._virtual_samples < self._buffer_target_size:
+            missing = self._buffer_target_size - len(self._board_buffer)
+            chunks_to_gen = max(missing // _GEN_CHUNK_SIZE, _MIN_CHUNKS_GEN)
+            self._background_refill(chunks_to_gen)
         return states
 
     def collate_inputs(
@@ -90,17 +115,36 @@ class ChessDataloader:
             metadata[idx] = state.board_metadata
         return board_state, metadata
 
-    def _vectorize_metadata(self, board: chess.Board) -> torch.Tensor:
-        """Vectorize metadata about the chess board."""
-        metadata = torch.full((8,), 64, dtype=torch.long)
-        metadata[MT_IDX_CASTLE_B] = board.has_castling_rights(chess.BLACK)
-        metadata[MT_IDX_CASTLE_W] = board.has_castling_rights(chess.WHITE)
-        metadata[MT_IDX_TURN] = board.turn
-        for idx, move in enumerate(reversed(board.move_stack)):
-            metadata[MT_IDX_MOVE + idx] = move.to_square
-            if idx >= 4:
-                break
-        return metadata
+    def _background_refill(self, n_chunks: int):
+        """Refill the buffer in the background."""
+        new_chunks = [
+            self._generation_pool.apply_async(
+                generate_boards, (_GEN_CHUNK_SIZE,), callback=self._add_to_buffer
+            )
+            for _ in range(n_chunks)
+        ]
+        self._virtual_samples += n_chunks * _GEN_CHUNK_SIZE
+
+    def _add_to_buffer(self, chunk: list[ChessState]):
+        """Add a chunk of generated boards to the buffer."""
+        self._virtual_samples -= len(chunk)
+        self._board_buffer.extend(chunk)
+
+
+def generate_boards(n: int) -> list[ChessState]:
+    states = []
+    for _ in range(n):
+        board = _generate_random_board()
+        vboard, leg_moves = _vectorize_board(board)
+        states.append(
+            ChessState(
+                board_state=vboard,
+                board_metadata=_vectorize_metadata(board),
+                legal_moves=leg_moves,
+                is_checkmate=board.is_checkmate(),
+            )
+        )
+    return states
 
 
 def _generate_random_board() -> chess.Board:
@@ -129,3 +173,16 @@ def _vectorize_board(board: chess.Board) -> tuple[torch.Tensor, list[list[int]]]
         board_state[idx, ST_IDX_SQUARE] = square
         moves.append(list(legal_moves[square]))
     return board_state, moves
+
+
+def _vectorize_metadata(board: chess.Board) -> torch.Tensor:
+    """Vectorize metadata about the chess board."""
+    metadata = torch.full((8,), 64, dtype=torch.long)
+    metadata[MT_IDX_CASTLE_B] = board.has_castling_rights(chess.BLACK)
+    metadata[MT_IDX_CASTLE_W] = board.has_castling_rights(chess.WHITE)
+    metadata[MT_IDX_TURN] = board.turn
+    for idx, move in enumerate(reversed(board.move_stack)):
+        metadata[MT_IDX_MOVE + idx] = move.to_square
+        if idx >= 4:
+            break
+    return metadata

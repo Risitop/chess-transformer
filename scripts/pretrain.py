@@ -18,6 +18,7 @@ MODEL_KWARGS = dict(
     n_layers=12,
     n_heads=12,
     dropout_rate=0.0,
+    n_jobs=16,
 )
 
 mode = "pretrain"
@@ -78,19 +79,18 @@ if __name__ == "__main__":
     checkpoint_n = 0
     step = 0
     tstart = time.time()
-    states = model.dataloader.get_boards(batch_size)
     while True:
         # Accumulate gradients
         total_loss = 0.0
         for gstep in range(accumulate_grad):
             batch_size = min(batch_size, current_position)
             current_position -= batch_size
+            states = model.dataloader.get_boards(batch_size)
             with amp_ctx:
                 loss, metrics = model.step(states)
                 loss = loss / accumulate_grad
             loss.backward()
             total_loss += loss.item()
-            states = model.dataloader.get_boards(batch_size)
 
         gnorm = nn.utils.clip_grad_norm_(model.parameters(), gradient_clip)
         optimizer.step()
@@ -130,10 +130,11 @@ if __name__ == "__main__":
             message = (
                 f"[ Positions {position_k}-{position_k + batch_size}/{n_positions} / {pct:5.1f}% ] "
                 f"Loss: {np.mean(losses_mem):.3f} / "  # type: ignore
-                f"Grad Norm: {gnorm:.6f} / "
+                f"|Grad|: {gnorm:.4f} / "
                 f"LR: {learning_rate:.2e} / "
-                f"P(illegal): {np.mean(illegal_prob_mem):.3f} / "  # type: ignore
-                f"{pos_per_s:.2f} positions/s / "
+                f"p(illegal): {np.mean(illegal_prob_mem):.3f} / "  # type: ignore
+                f"{pos_per_s:.2f} pos/s / "
+                f"DL buffer: {len(model.dataloader._board_buffer)} / "
                 f"ETA: {(n_positions - position_k) / pos_per_s / 60:.2f} min"
             )
             print(message, end=" " * 20 + "\r")

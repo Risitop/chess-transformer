@@ -40,6 +40,8 @@ class Chessformer(nn.Module):
         Dropout rate.
     reward_discount : float, optional
         Discount factor for rewards that are used to calculate the policy loss.
+    n_jobs : int, optional
+        Number of parallel jobs to use for data generation.
     """
 
     def __init__(
@@ -49,13 +51,14 @@ class Chessformer(nn.Module):
         n_layers: int,
         n_heads: int,
         dropout_rate: float,
+        n_jobs: int,
     ):
         super().__init__()
         # Internals
         self.all_moves = utils.load_moves()
         self.move2idx = {move: idx for idx, move in enumerate(self.all_moves)}
         self.idx2move = {idx: move for idx, move in enumerate(self.all_moves)}
-        self.dataloader = dl.ChessDataloader()
+        self.dataloader = dl.ChessDataloader(n_jobs=n_jobs)
         self.device = torch.device("cpu")
 
         # Model state embeddings
