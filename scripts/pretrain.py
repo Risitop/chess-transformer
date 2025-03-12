@@ -14,7 +14,7 @@ _CKPT_PTH = Path(__file__).parent.parent / "checkpoints"
 MODEL_KWARGS = dict(
     n_hidden=1,
     dim_hidden=768,
-    n_layers=12,
+    n_layers=24,
     n_heads=12,
     dropout_rate=0.0,
     n_jobs=16,
@@ -24,16 +24,16 @@ mode = "pretrain"
 n_positions = current_position = 1_000_000
 batch_size = 64
 accumulate_grad = 32
-lr_init = 1e-5
-lr_min = 1e-6
-lr_warmup = 50
-lr_decay_until = 10_000
+lr_init = 6e-5
+lr_min = 6e-6
+lr_warmup = 15
+lr_decay_until = 450
 weight_decay = 1e-1
 gradient_clip = 1.0
 decay_every = 5_000
-checkpoint_every = 100_000
+checkpoint_every = 100
 compile_model = True
-beta1, beta2 = 0.9, 0.999
+beta1, beta2 = 0.9, 0.95
 
 torch.set_float32_matmul_precision("high")
 
@@ -102,7 +102,7 @@ if __name__ == "__main__":
         step += 1
 
         # Checkpoint
-        checkpoint_in -= batch_size
+        checkpoint_in -= 1
         if checkpoint_in <= 0:
             checkpoint_in = checkpoint_every
             checkpoint_n += 1
