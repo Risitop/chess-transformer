@@ -5,9 +5,8 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from chessformer import logging
+from chessformer import logging, utils
 from chessformer.model import Chessformer
-from chessformer import utils
 
 _GAMES_PTH = Path(__file__).parent.parent / "out"
 _CKPT_PTH = Path(__file__).parent.parent / "checkpoints"

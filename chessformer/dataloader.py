@@ -1,14 +1,10 @@
 import dataclasses
+import multiprocessing as mp
 import random
 
 import chess
-import multiprocessing as mp
 import numpy as np
 import torch
-import functools
-
-from chessformer import logging
-from typing import Sequence
 
 _PIECE2IDX = {piece: index for index, piece in enumerate("PNBRQKpnbrqk")}
 _MAX_MOVES = 256
@@ -117,12 +113,10 @@ class ChessDataloader:
 
     def _background_refill(self, n_chunks: int):
         """Refill the buffer in the background."""
-        new_chunks = [
+        for _ in range(n_chunks):
             self._generation_pool.apply_async(
                 generate_boards, (_GEN_CHUNK_SIZE,), callback=self._add_to_buffer
             )
-            for _ in range(n_chunks)
-        ]
         self._virtual_samples += n_chunks * _GEN_CHUNK_SIZE
 
     def _add_to_buffer(self, chunk: list[ChessState]):
