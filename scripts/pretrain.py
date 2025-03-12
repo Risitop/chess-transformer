@@ -21,8 +21,8 @@ MODEL_KWARGS = dict(
 
 mode = "pretrain"
 n_positions = 1_000_000
-batch_size = 512
-learning_rate = 1e-4
+batch_size = 128
+learning_rate = 6e-4
 learning_rate_decay = 0.99
 learning_rate_min = 6e-5
 weight_decay = 1e-1
@@ -31,7 +31,7 @@ decay_every = 5_000
 print_every = 100
 checkpoint_every = 100_000
 compile_model = False
-beta1, beta2 = 0.9, 0.999
+beta1, beta2 = 0.9, 0.95
 
 if __name__ == "__main__":
     model = Chessformer(**MODEL_KWARGS)  # type: ignore

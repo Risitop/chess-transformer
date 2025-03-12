@@ -38,3 +38,16 @@ def cosine_lr_with_warmup(
     assert 0 <= decay_ratio <= 1
     coeff = 0.5 * (1.0 + math.cos(math.pi * decay_ratio))  # coeff ranges 0..1
     return min_lr + coeff * (lr - min_lr)
+
+
+def bigint_to_str(x: int) -> str:
+    """Convert a big integer to a string."""
+    if x > 1e12:
+        return f"{x / 1e12:.1f}T"
+    if x > 1e9:
+        return f"{x / 1e9:.1f}B"
+    if x > 1e6:
+        return f"{x / 1e6:.1f}M"
+    if x > 1e3:
+        return f"{x / 1e3:.1f}K"
+    return str(x)

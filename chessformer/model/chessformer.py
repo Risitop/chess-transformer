@@ -61,11 +61,10 @@ class Chessformer(nn.Module):
 
         # Model state embeddings
         self.emb_piece = nn.Embedding(13, dim_hidden, padding_idx=12)
-        self.emb_pos = nn.Embedding(65, dim_hidden, padding_idx=64)
+        self.emb_pos = nn.Embedding(64, dim_hidden)
         self.emb_castle_b = nn.Embedding(2, dim_hidden)
         self.emb_castle_w = nn.Embedding(2, dim_hidden)
         self.emb_turn = nn.Embedding(2, dim_hidden)
-        self.cls_token = nn.Parameter(torch.randn(dim_hidden))
         self.prv_move = nn.Parameter(torch.randn(dim_hidden))
 
         # Transformer architecture
@@ -81,16 +80,13 @@ class Chessformer(nn.Module):
             ),
             num_layers=n_layers,
         )
-        self.move_decoder = MLP(
-            dim_hidden,
-            len(self.all_moves),
-            n_hidden,
-            4 * dim_hidden,
-            dropout_rate,
-        )
+        self.move_decoder = nn.Linear(dim_hidden, 64)
+        self.move_decoder.weight = self.emb_pos.weight
         self.apply(self._init_weights)
 
-        nparams = sum(p.numel() for p in self.parameters() if p.requires_grad)
+        nparams = utils.bigint_to_str(
+            sum(p.numel() for p in self.parameters() if p.requires_grad)
+        )
         logging.info(f"Chessformer initialized with {nparams} trainable parameters.")
 
     def to(self, device: str | torch.device) -> "Chessformer":
@@ -117,53 +113,47 @@ class Chessformer(nn.Module):
             ],
             dim=1,
         )
-        cls_emb = self.cls_token.repeat(B, 1).unsqueeze(1)
 
-        full_emb = torch.cat(
-            [cls_emb, base_emb, cb_emb, cw_emb, trn_emb, mvs_emb], dim=1
-        )
+        full_emb = torch.cat([base_emb, cb_emb, cw_emb, trn_emb, mvs_emb], dim=1)
 
         # Padding mask
         state_mask = state[:, :, 0] == 12
-        metadata_mask = metadata == 64
-        mask = torch.cat(
-            [
-                torch.zeros(B, 1, dtype=torch.bool, device=self.device),
-                state_mask,
-                metadata_mask,
-            ],
-            dim=1,
+        metadata_mask = torch.zeros(
+            B, metadata.shape[1], device=self.device, dtype=torch.bool
         )
+        mask = torch.cat([state_mask, metadata_mask], dim=1)
 
         # Transformer
         trans_emb = self.mha(full_emb, src_key_padding_mask=mask)  # (B, T, C)
-        moves_logits = self.move_decoder(trans_emb[:, 0, :])
-        return moves_logits
+        return self.move_decoder(trans_emb[:, : -metadata.shape[1], :])
 
     def step(self, states: list[dl.ChessState]) -> tuple[torch.Tensor, TrainingMetrics]:
         """Take a step in the games, return the legal loss and monitoring metrics."""
-        batch_size = len(states)
         state, metadata = self.dataloader.collate_inputs(states)
+        B, T, _ = state.shape
         move_logits = self.forward(state, metadata)
         if len(move_logits.shape) == 1:
             move_logits = move_logits.unsqueeze(0)
 
         # Calculate move legality loss
         illegal_target = torch.zeros(
-            (batch_size, len(self.all_moves)),
+            (B, T, 64),
             device=self.device,
             dtype=torch.float32,
         )
         for idx, state in enumerate(states):
-            legal_moves = state.legal_moves
-            if not legal_moves:
-                continue
-            legal_idx = [self.move2idx[move] for move in legal_moves]
-            illegal_target[idx, legal_idx] = 1 / len(legal_moves)
+            for pidx, moveset in enumerate(state.legal_moves):
+                if not moveset:
+                    continue
+                illegal_target[idx, pidx, moveset] = 1 / len(moveset)
 
-        loss_legal = F.cross_entropy(move_logits, illegal_target, reduction="mean")
+        loss_legal = F.cross_entropy(
+            move_logits.transpose(1, 2),
+            illegal_target.transpose(1, 2),
+            reduction="mean",
+        )
         action_probs = F.softmax(move_logits, dim=-1)
-        prob_illegal = (action_probs * (illegal_target == 0)).sum(dim=1).mean()
+        prob_illegal = (action_probs * (illegal_target == 0)).sum(dim=-1).mean()
 
         return (
             loss_legal,

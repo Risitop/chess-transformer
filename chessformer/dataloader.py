@@ -42,10 +42,9 @@ class ChessState:
         Whether the current board state is a checkmate.
     """
 
-    board: chess.Board
     board_state: torch.Tensor
     board_metadata: torch.Tensor
-    legal_moves: list[str]
+    legal_moves: list[list[int]]
     is_checkmate: bool
 
 
@@ -64,12 +63,12 @@ class ChessDataloader:
         states = []
         for _ in range(batch_size):
             board = _generate_random_board()
+            vboard, leg_moves = _vectorize_board(board)
             states.append(
                 ChessState(
-                    board=board,
-                    board_state=_vectorize_board(board),
+                    board_state=vboard,
                     board_metadata=self._vectorize_metadata(board),
-                    legal_moves=[move.uci() for move in board.legal_moves],
+                    legal_moves=leg_moves,
                     is_checkmate=board.is_checkmate(),
                 )
             )
@@ -116,11 +115,18 @@ def _generate_random_board() -> chess.Board:
     return board
 
 
-def _vectorize_board(board: chess.Board) -> torch.Tensor:
+def _vectorize_board(board: chess.Board) -> tuple[torch.Tensor, list[list[int]]]:
     """Vectorize a chess board state for input to the model."""
     board_map = board.piece_map()
     board_state = torch.zeros(len(board_map), 2, dtype=torch.long)
+    legal_moves = list(board.legal_moves)
+    moves = []
     for idx, (square, piece) in enumerate(board_map.items()):
+        moves_ = []
         board_state[idx, ST_IDX_PIECE] = _PIECE2IDX[piece.symbol()]
         board_state[idx, ST_IDX_SQUARE] = square
-    return board_state
+        for move in legal_moves:
+            if move.from_square == square:
+                moves_.append(move.to_square)
+        moves.append(moves_)
+    return board_state, moves
