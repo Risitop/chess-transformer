@@ -23,15 +23,14 @@ MODEL_KWARGS = dict(
 mode = "pretrain"
 n_positions = current_position = 1_000_000
 batch_size = 64
-accumulate_grad = 8
+accumulate_grad = 32
 lr_init = 1e-5
 lr_min = 1e-6
-lr_warmup = 100
-lr_decay_until = 1000
+lr_warmup = 50
+lr_decay_until = 10_000
 weight_decay = 1e-1
 gradient_clip = 1.0
 decay_every = 5_000
-print_every = 100
 checkpoint_every = 100_000
 compile_model = True
 beta1, beta2 = 0.9, 0.999
@@ -73,7 +72,6 @@ if __name__ == "__main__":
     losses_mem = []
     illegal_prob_mem = []
     decay_in = decay_every
-    print_in = print_every
     checkpoint_in = checkpoint_every
     checkpoint_n = 0
     step = 0
@@ -119,24 +117,24 @@ if __name__ == "__main__":
         losses_mem = losses_mem[-100:]
         illegal_prob_mem = illegal_prob_mem[-100:]
 
-        print_in -= batch_size
-        if print_in <= 0:
-            position_k = n_positions - current_position
-            print_in = print_every
-            pct = 100 * position_k / n_positions
-            elapsed = time.time() - tstart
-            pos_per_s = position_k / elapsed
-            message = (
-                f"[ Positions {position_k}-{position_k + batch_size}/{n_positions} / {pct:5.1f}% ] "
-                f"Loss: {np.mean(losses_mem):.3f} / "  # type: ignore
-                f"|Grad|: {gnorm:.4f} / "
-                f"LR: {learning_rate:.2e} / "
-                f"p(illegal): {np.mean(illegal_prob_mem):.3f} / "  # type: ignore
-                f"{pos_per_s:.2f} pos/s / "
-                f"DL buffer: {len(model.dataloader._board_buffer)} / "
-                f"ETA: {(n_positions - position_k) / pos_per_s / 60:.2f} min"
-            )
-            print(message, end=" " * 20 + "\r")
-            logging.debug(message)
+        position_k = n_positions - current_position
+        seen = utils.bigint_to_str(position_k)
+        pct = 100 * position_k / n_positions
+        elapsed = time.time() - tstart
+        pos_per_s = position_k / elapsed
+        message = (
+            f"[ Step {step} / {pct:5.1f}% / #boards: {seen} ] "
+            f"Loss: {np.mean(losses_mem):.3f} / "  # type: ignore
+            f"|Grad|: {gnorm:.4f} / "
+            f"LR: {learning_rate:.2e} / "
+            f"p(illegal): {np.mean(illegal_prob_mem):.3f} / "  # type: ignore
+            f"{pos_per_s:.2f} pos/s / "
+            f"DL buffer: {len(model.dataloader._board_buffer)} / "
+            f"ETA: {(n_positions - position_k) / pos_per_s / 60:.2f} min"
+        )
+        logging.info(message)
+
+        if current_position <= 0:
+            break
 
     torch.save(model.state_dict(), "chessformer_pretrain_final.ckpt")

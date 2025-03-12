@@ -69,7 +69,7 @@ class ChessDataloader:
         cores.
     """
 
-    def __init__(self, buffer_target_size: int = 2_000, n_jobs: int = 16):
+    def __init__(self, buffer_target_size: int = 4096, n_jobs: int = 16):
         self._board_buffer = []
         self._buffer_target_size = buffer_target_size
         if n_jobs == -1:
