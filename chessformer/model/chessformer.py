@@ -6,7 +6,6 @@ import torch.nn.functional as F
 
 from chessformer import dataloader as dl
 from chessformer import logging, utils
-from chessformer.model.mlp import MLP
 
 
 @dataclasses.dataclass
@@ -65,7 +64,7 @@ class Chessformer(nn.Module):
         self.emb_castle_b = nn.Embedding(2, dim_hidden)
         self.emb_castle_w = nn.Embedding(2, dim_hidden)
         self.emb_turn = nn.Embedding(2, dim_hidden)
-        self.prv_move = nn.Parameter(torch.randn(dim_hidden))
+        self.prv_move = nn.Parameter(torch.zeros(dim_hidden))
 
         # Transformer architecture
         self.mha = nn.TransformerEncoder(
@@ -80,8 +79,9 @@ class Chessformer(nn.Module):
             ),
             num_layers=n_layers,
         )
-        self.move_decoder = nn.Linear(dim_hidden, 64)
+        self.move_decoder = nn.Linear(dim_hidden, 64, bias=False)
         self.move_decoder.weight = self.emb_pos.weight
+
         self.apply(self._init_weights)
 
         nparams = utils.bigint_to_str(
@@ -125,7 +125,8 @@ class Chessformer(nn.Module):
 
         # Transformer
         trans_emb = self.mha(full_emb, src_key_padding_mask=mask)  # (B, T, C)
-        return self.move_decoder(trans_emb[:, : -metadata.shape[1], :])
+        trans_emb = trans_emb[:, : -metadata.shape[1], :]  # Keep only pieces
+        return self.move_decoder(trans_emb)
 
     def step(self, states: list[dl.ChessState]) -> tuple[torch.Tensor, TrainingMetrics]:
         """Take a step in the games, return the legal loss and monitoring metrics."""
@@ -148,9 +149,7 @@ class Chessformer(nn.Module):
                 illegal_target[idx, pidx, moveset] = 1 / len(moveset)
 
         loss_legal = F.cross_entropy(
-            move_logits.transpose(1, 2),
-            illegal_target.transpose(1, 2),
-            reduction="mean",
+            move_logits.transpose(1, 2), illegal_target.transpose(1, 2)
         )
         action_probs = F.softmax(move_logits, dim=-1)
         prob_illegal = (action_probs * (illegal_target == 0)).sum(dim=-1).mean()

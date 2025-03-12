@@ -17,6 +17,7 @@ MT_IDX_CASTLE_B = 0
 MT_IDX_CASTLE_W = 1
 MT_IDX_TURN = 2
 MT_IDX_MOVE = 3
+MV_PROM = 65
 
 
 @dataclasses.dataclass
@@ -119,14 +120,12 @@ def _vectorize_board(board: chess.Board) -> tuple[torch.Tensor, list[list[int]]]
     """Vectorize a chess board state for input to the model."""
     board_map = board.piece_map()
     board_state = torch.zeros(len(board_map), 2, dtype=torch.long)
-    legal_moves = list(board.legal_moves)
+    legal_moves = {square: set() for square in range(65)}  # 64 + promotion
+    for move in board.legal_moves:
+        legal_moves[move.from_square].add(move.to_square)
     moves = []
     for idx, (square, piece) in enumerate(board_map.items()):
-        moves_ = []
         board_state[idx, ST_IDX_PIECE] = _PIECE2IDX[piece.symbol()]
         board_state[idx, ST_IDX_SQUARE] = square
-        for move in legal_moves:
-            if move.from_square == square:
-                moves_.append(move.to_square)
-        moves.append(moves_)
+        moves.append(list(legal_moves[square]))
     return board_state, moves
